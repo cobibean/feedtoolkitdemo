@@ -436,6 +436,7 @@ export function useFeedUpdater(): UseFeedUpdaterResult {
           updateProgress('enabling-pool', `Enabling source chain ${priceData.chainId} on PriceRelay...`);
           try {
             const enableChainHash = await flareWalletClient.writeContract({
+              chain: flare,
               address: priceRelayAddress!,
               abi: PRICE_RELAY_ABI,
               functionName: 'enableChain',
@@ -455,6 +456,7 @@ export function useFeedUpdater(): UseFeedUpdaterResult {
           updateProgress('enabling-pool', `Enabling pool on PriceRelay (token binding)...`);
           try {
             const enablePoolHash = await flareWalletClient.writeContract({
+              chain: flare,
               address: priceRelayAddress!,
               abi: PRICE_RELAY_ABI,
               functionName: 'enablePool',
@@ -482,6 +484,7 @@ export function useFeedUpdater(): UseFeedUpdaterResult {
         updateProgress('relaying-price', `Relaying price to Flare (from ${sourceChain?.name})...`);
 
         const relayHash = await flareWalletClient.writeContract({
+          chain: flare,
           address: priceRelayAddress!,
           abi: PRICE_RELAY_ABI,
           functionName: 'relayPrice',
@@ -580,6 +583,7 @@ export function useFeedUpdater(): UseFeedUpdaterResult {
           updateProgress('enabling-pool', 'Pool not enabled on recorder. Please confirm transaction to enable...');
           
           const enableHash = await sourceWalletClient.writeContract({
+            chain: sourceChainDef,
             address: priceRecorderAddress!,
             abi: PRICE_RECORDER_ABI,
             functionName: 'enablePool',
@@ -622,6 +626,7 @@ export function useFeedUpdater(): UseFeedUpdaterResult {
         updateProgress('recording', `Recording price on ${sourceChain?.name || 'source chain'}${gasWarning}...`);
 
         const recordHash = await sourceWalletClient.writeContract({
+          chain: sourceChainDef,
           address: priceRecorderAddress!,
           abi: PRICE_RECORDER_ABI,
           functionName: 'recordPrice',
@@ -829,6 +834,7 @@ export function useFeedUpdater(): UseFeedUpdaterResult {
       updateProgress('requesting-attestation', `Submitting attestation request (fee: ${(Number(fee) / 1e18).toFixed(2)} FLR)...`);
 
       const attestHash = await flareWalletClient.writeContract({
+        chain: flare,
         address: fdcConfig.FDC_HUB,
         abi: FDC_HUB_ABI,
         functionName: 'requestAttestation',
@@ -974,6 +980,7 @@ export function useFeedUpdater(): UseFeedUpdaterResult {
       };
 
       const updateHash = await flareWalletClient.writeContract({
+        chain: flare,
         address: feedAddress,
         abi: CUSTOM_FEED_ABI,
         functionName: 'updateFromProof',
