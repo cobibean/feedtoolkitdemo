@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createPublicClient, createWalletClient, http } from 'viem';
 import { privateKeyToAccount } from 'viem/accounts';
+import { flare } from 'viem/chains';
 import { PRICE_RELAY_ABI } from '@/lib/artifacts/PriceRelay';
 
 /**
@@ -89,6 +90,7 @@ export async function POST(request: NextRequest) {
     
     const walletClient = createWalletClient({
       account,
+      chain: flare,
       transport: http(FLARE_RPC),
     });
     
