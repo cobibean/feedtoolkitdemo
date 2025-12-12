@@ -936,11 +936,25 @@ export function useFeedUpdater(): UseFeedUpdaterResult {
       );
 
       // Format proof for contract with null safety
-      const logIndices = decodedResponse.requestBody?.logIndices || [];
-      const events = decodedResponse.responseBody?.events || [];
+      type Hex = `0x${string}`;
+      type Address = `0x${string}`;
+
+      // Important: use readonly-typed fallbacks so we don't widen to mutable arrays
+      const logIndices =
+        decodedResponse.requestBody?.logIndices ?? ([] as readonly number[]);
+
+      const events =
+        decodedResponse.responseBody?.events ??
+        ([] as readonly {
+          logIndex: number | bigint;
+          emitterAddress: Address;
+          topics: readonly Hex[];
+          data: Hex;
+          removed: boolean;
+        }[]);
       
       const proofStruct = {
-        merkleProof: (proofData.proof || []) as `0x${string}`[],
+        merkleProof: (proofData.proof ?? []) as readonly Hex[],
         data: {
           attestationType: decodedResponse.attestationType,
           sourceId: decodedResponse.sourceId,
@@ -951,7 +965,7 @@ export function useFeedUpdater(): UseFeedUpdaterResult {
             requiredConfirmations: decodedResponse.requestBody.requiredConfirmations,
             provideInput: decodedResponse.requestBody.provideInput,
             listEvents: decodedResponse.requestBody.listEvents,
-            logIndices: [...logIndices],
+            logIndices,
           },
           responseBody: {
             blockNumber: decodedResponse.responseBody.blockNumber,
@@ -962,19 +976,19 @@ export function useFeedUpdater(): UseFeedUpdaterResult {
             value: decodedResponse.responseBody.value,
             input: decodedResponse.responseBody.input,
             status: decodedResponse.responseBody.status,
-            events: events.map((event: {
-              logIndex: number | bigint;
-              emitterAddress: string;
-              topics: readonly `0x${string}`[];
-              data: `0x${string}`;
-              removed: boolean;
-            }) => ({
+            events: events.map((event) => ({
               logIndex: Number(event.logIndex),
-              emitterAddress: event.emitterAddress,
-              topics: [...(event.topics || [])],
-              data: event.data,
+              emitterAddress: event.emitterAddress as Address,
+              topics: (event.topics ?? ([] as readonly Hex[])) as readonly Hex[],
+              data: event.data as Hex,
               removed: event.removed,
-            })),
+            })) as readonly {
+              logIndex: number;
+              emitterAddress: Address;
+              topics: readonly Hex[];
+              data: Hex;
+              removed: boolean;
+            }[],
           },
         },
       };

@@ -456,6 +456,10 @@ export class BotService {
     }
 
     const recordHash = await sourceWalletClient.writeContract({
+      // Wallet client is already configured with a chain; viem's typings may require an explicit `chain: null`
+      // to prevent accidental overrides when the client has a fixed chain.
+      chain: null,
+      account: sourceWalletClient.account!,
       address: feed.priceRecorderAddress!,
       abi: PRICE_RECORDER_ABI,
       functionName: 'recordPrice',
@@ -550,6 +554,8 @@ export class BotService {
     this.log('info', `  📤 Relaying to Flare...`);
 
     const relayHash = await this.walletClient.writeContract({
+      chain: null,
+      account: this.walletClient.account!,
       address: feed.priceRelayAddress!,
       abi: PRICE_RELAY_ABI,
       functionName: 'relayPrice',
@@ -680,6 +686,8 @@ export class BotService {
     ]);
 
     const attestHash = await this.walletClient!.writeContract({
+      chain: null,
+      account: this.walletClient!.account!,
       address: FDC_HUB,
       abi: FDC_HUB_ABI,
       functionName: 'requestAttestation',

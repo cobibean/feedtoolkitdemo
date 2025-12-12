@@ -90,6 +90,9 @@ export function usePoolInfo(poolAddress: string | undefined, chainId: number = 1
       return;
     }
 
+    // Capture needed chain fields after the guard so TypeScript doesn't treat `chain` as possibly undefined
+    const rpcUrl = chain.rpcUrl;
+
     let cancelled = false;
     
     async function fetchCrossChainPoolInfo() {
@@ -98,7 +101,7 @@ export function usePoolInfo(poolAddress: string | undefined, chainId: number = 1
       try {
         // Create a client for the source chain
         const client = createPublicClient({
-          transport: http(chain.rpcUrl),
+          transport: http(rpcUrl),
         });
 
         // Fetch pool data
@@ -148,7 +151,7 @@ export function usePoolInfo(poolAddress: string | undefined, chainId: number = 1
 
         if (cancelled) return;
 
-        const slot0Data = slot0Result as [bigint, number, ...unknown[]];
+        const slot0Data = slot0Result as unknown as readonly [bigint, number, ...unknown[]];
 
         const poolInfo: PoolInfo = {
           token0: poolToken0 as `0x${string}`,
