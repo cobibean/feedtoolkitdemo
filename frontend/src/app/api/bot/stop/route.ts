@@ -24,7 +24,7 @@ export async function POST() {
       { 
         success: false,
         error: error instanceof Error ? error.message : 'Unknown error',
-        status: botService.getStatus(),
+        status: 'error',
       },
       { status: 500 }
     );

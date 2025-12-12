@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { botService } from '@/lib/bot-service';
+import { getBotService } from '@/lib/bot-service';
 
 /**
  * GET /api/bot/logs
@@ -13,6 +13,7 @@ export async function GET(request: NextRequest) {
     const { searchParams } = new URL(request.url);
     const limit = parseInt(searchParams.get('limit') || '100');
 
+    const botService = getBotService();
     const logs = botService.getLogs(limit);
 
     return NextResponse.json({
