@@ -161,7 +161,7 @@ export default function SettingsPage() {
   };
 
   const handleDownload = () => {
-    downloadEnvFile(generatedConfig, `bot-${networkId}.env`);
+    downloadEnvFile(generatedConfig, `bot-config.env`);
     toast.success('Configuration file downloaded');
   };
 
