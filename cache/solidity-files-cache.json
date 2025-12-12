@@ -1,0 +1,189 @@
+{
+  "_format": "hh-sol-cache-2",
+  "files": {
+    "/Users/cobibean/flare-custom-feeds-toolkit-main/contracts/PoolPriceCustomFeed.sol": {
+      "lastModificationDate": 1765487177592,
+      "contentHash": "48b6bfb2009db02c52aa2a4d98f2ffde",
+      "sourceName": "contracts/PoolPriceCustomFeed.sol",
+      "solcConfig": {
+        "version": "0.8.19",
+        "settings": {
+          "optimizer": {
+            "enabled": true,
+            "runs": 200
+          },
+          "outputSelection": {
+            "*": {
+              "*": [
+                "abi",
+                "evm.bytecode",
+                "evm.deployedBytecode",
+                "evm.methodIdentifiers",
+                "metadata"
+              ],
+              "": [
+                "ast"
+              ]
+            }
+          }
+        }
+      },
+      "imports": [],
+      "versionPragmas": [
+        "^0.8.19"
+      ],
+      "artifacts": [
+        "IEVMTransaction",
+        "IFdcVerification",
+        "IFlareContractRegistry",
+        "IICustomFeed",
+        "PoolPriceCustomFeed"
+      ]
+    },
+    "/Users/cobibean/flare-custom-feeds-toolkit-main/contracts/PriceRecorder.sol": {
+      "lastModificationDate": 1765421932370,
+      "contentHash": "8a55a6c6a084c8f13a5cbc8dd9d1e394",
+      "sourceName": "contracts/PriceRecorder.sol",
+      "solcConfig": {
+        "version": "0.8.19",
+        "settings": {
+          "optimizer": {
+            "enabled": true,
+            "runs": 200
+          },
+          "outputSelection": {
+            "*": {
+              "*": [
+                "abi",
+                "evm.bytecode",
+                "evm.deployedBytecode",
+                "evm.methodIdentifiers",
+                "metadata"
+              ],
+              "": [
+                "ast"
+              ]
+            }
+          }
+        }
+      },
+      "imports": [],
+      "versionPragmas": [
+        "^0.8.19"
+      ],
+      "artifacts": [
+        "IUniswapV3Pool",
+        "PriceRecorder"
+      ]
+    },
+    "/Users/cobibean/flare-custom-feeds-toolkit-main/contracts/PriceRelay.sol": {
+      "lastModificationDate": 1765503082030,
+      "contentHash": "152fee809885c932c81587631650c086",
+      "sourceName": "contracts/PriceRelay.sol",
+      "solcConfig": {
+        "version": "0.8.19",
+        "settings": {
+          "optimizer": {
+            "enabled": true,
+            "runs": 200
+          },
+          "outputSelection": {
+            "*": {
+              "*": [
+                "abi",
+                "evm.bytecode",
+                "evm.deployedBytecode",
+                "evm.methodIdentifiers",
+                "metadata"
+              ],
+              "": [
+                "ast"
+              ]
+            }
+          }
+        }
+      },
+      "imports": [],
+      "versionPragmas": [
+        "^0.8.19"
+      ],
+      "artifacts": [
+        "PriceRelay"
+      ]
+    },
+    "/Users/cobibean/flare-custom-feeds-toolkit-main/contracts/CrossChainPoolPriceCustomFeed.sol": {
+      "lastModificationDate": 1765502609446,
+      "contentHash": "515a176688bcdae841cda0843532052b",
+      "sourceName": "contracts/CrossChainPoolPriceCustomFeed.sol",
+      "solcConfig": {
+        "version": "0.8.19",
+        "settings": {
+          "optimizer": {
+            "enabled": true,
+            "runs": 200
+          },
+          "outputSelection": {
+            "*": {
+              "*": [
+                "abi",
+                "evm.bytecode",
+                "evm.deployedBytecode",
+                "evm.methodIdentifiers",
+                "metadata"
+              ],
+              "": [
+                "ast"
+              ]
+            }
+          }
+        }
+      },
+      "imports": [],
+      "versionPragmas": [
+        "^0.8.19"
+      ],
+      "artifacts": [
+        "CrossChainPoolPriceCustomFeed",
+        "IEVMTransaction",
+        "IFdcVerification",
+        "IICustomFeed"
+      ]
+    },
+    "/Users/cobibean/flare-custom-feeds-toolkit-main/contracts/MockFdcVerification.sol": {
+      "lastModificationDate": 1765503225925,
+      "contentHash": "7c9926502e2231b294bd6fb8cf7a1e19",
+      "sourceName": "contracts/MockFdcVerification.sol",
+      "solcConfig": {
+        "version": "0.8.19",
+        "settings": {
+          "optimizer": {
+            "enabled": true,
+            "runs": 200
+          },
+          "outputSelection": {
+            "*": {
+              "*": [
+                "abi",
+                "evm.bytecode",
+                "evm.deployedBytecode",
+                "evm.methodIdentifiers",
+                "metadata"
+              ],
+              "": [
+                "ast"
+              ]
+            }
+          }
+        }
+      },
+      "imports": [],
+      "versionPragmas": [
+        "^0.8.19"
+      ],
+      "artifacts": [
+        "IEVMTransaction",
+        "MockFdcVerification"
+      ]
+    }
+  }
+}

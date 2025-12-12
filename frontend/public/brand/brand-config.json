@@ -1,0 +1,50 @@
+{
+  "name": "Flare Forward",
+  "colors": {
+    "primary": {
+      "name": "Flare Pink",
+      "hex": "#E8195D",
+      "rgb": "232, 25, 93",
+      "usage": "Primary brand color, CTAs, accents, highlights"
+    },
+    "background": {
+      "dark": "#000000",
+      "light": "#FFFFFF"
+    },
+    "text": {
+      "onDark": "#FFFFFF",
+      "onLight": "#000000",
+      "muted": "#6B7280"
+    },
+    "semantic": {
+      "success": "#22C55E",
+      "warning": "#F59E0B",
+      "error": "#EF4444",
+      "info": "#3B82F6"
+    }
+  },
+  "fonts": {
+    "display": {
+      "family": "Archivo Black",
+      "file": "ArchivoBlack-Regular.ttf",
+      "usage": "Headlines, hero text, brand moments"
+    },
+    "body": {
+      "family": "Satoshi",
+      "file": "Satoshi-Variable.woff2",
+      "weights": {
+        "light": 300,
+        "regular": 400,
+        "medium": 500,
+        "bold": 700,
+        "black": 900
+      },
+      "usage": "Body text, UI elements, navigation"
+    }
+  },
+  "assets": {
+    "logo": "logo.png",
+    "logoAlt": "Flare Forward logo - pink arrow with 'flare Forward' text"
+  }
+}
+

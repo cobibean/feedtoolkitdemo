@@ -1,0 +1,50 @@
+# Dependencies
+node_modules/
+
+# Build artifacts
+cache/
+# Keep artifacts/ directory for pre-compiled ABIs (but ignore hardhat-generated ones)
+artifacts/contracts/
+artifacts/build-info/
+
+# Environment files
+.env
+.env.local
+.env.*.local
+
+# Logs
+logs/
+*.log
+npm-debug.log*
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+.DS_Store
+
+# Test files
+coverage/
+coverage.json
+typechain/
+typechain-types/
+
+# Deployments (keep example but ignore real deployments)
+deployments/*.json
+!deployments/.gitkeep
+
+# Miscellaneous
+*.tsbuildinfo
+.cache
+
+# UI Plan (internal development notes, not for public repo)
+UIPLAN.md
+
+# Brand kit source files (keep processed assets in frontend/public/brand/)
+brandkit/
+
+# Next.js
+frontend/.next/
+frontend/out/
+frontend/node_modules/

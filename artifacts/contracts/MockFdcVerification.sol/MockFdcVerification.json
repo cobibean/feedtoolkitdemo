@@ -1,0 +1,175 @@
+{
+  "_format": "hh-sol-artifact-1",
+  "contractName": "MockFdcVerification",
+  "sourceName": "contracts/MockFdcVerification.sol",
+  "abi": [
+    {
+      "inputs": [
+        {
+          "components": [
+            {
+              "internalType": "bytes32[]",
+              "name": "merkleProof",
+              "type": "bytes32[]"
+            },
+            {
+              "components": [
+                {
+                  "internalType": "bytes32",
+                  "name": "attestationType",
+                  "type": "bytes32"
+                },
+                {
+                  "internalType": "bytes32",
+                  "name": "sourceId",
+                  "type": "bytes32"
+                },
+                {
+                  "internalType": "uint64",
+                  "name": "votingRound",
+                  "type": "uint64"
+                },
+                {
+                  "internalType": "uint64",
+                  "name": "lowestUsedTimestamp",
+                  "type": "uint64"
+                },
+                {
+                  "components": [
+                    {
+                      "internalType": "bytes32",
+                      "name": "transactionHash",
+                      "type": "bytes32"
+                    },
+                    {
+                      "internalType": "uint16",
+                      "name": "requiredConfirmations",
+                      "type": "uint16"
+                    },
+                    {
+                      "internalType": "bool",
+                      "name": "provideInput",
+                      "type": "bool"
+                    },
+                    {
+                      "internalType": "bool",
+                      "name": "listEvents",
+                      "type": "bool"
+                    },
+                    {
+                      "internalType": "uint32[]",
+                      "name": "logIndices",
+                      "type": "uint32[]"
+                    }
+                  ],
+                  "internalType": "struct IEVMTransaction.RequestBody",
+                  "name": "requestBody",
+                  "type": "tuple"
+                },
+                {
+                  "components": [
+                    {
+                      "internalType": "uint64",
+                      "name": "blockNumber",
+                      "type": "uint64"
+                    },
+                    {
+                      "internalType": "uint64",
+                      "name": "timestamp",
+                      "type": "uint64"
+                    },
+                    {
+                      "internalType": "address",
+                      "name": "sourceAddress",
+                      "type": "address"
+                    },
+                    {
+                      "internalType": "bool",
+                      "name": "isDeployment",
+                      "type": "bool"
+                    },
+                    {
+                      "internalType": "address",
+                      "name": "receivingAddress",
+                      "type": "address"
+                    },
+                    {
+                      "internalType": "uint256",
+                      "name": "value",
+                      "type": "uint256"
+                    },
+                    {
+                      "internalType": "bytes",
+                      "name": "input",
+                      "type": "bytes"
+                    },
+                    {
+                      "internalType": "uint8",
+                      "name": "status",
+                      "type": "uint8"
+                    },
+                    {
+                      "components": [
+                        {
+                          "internalType": "uint32",
+                          "name": "logIndex",
+                          "type": "uint32"
+                        },
+                        {
+                          "internalType": "address",
+                          "name": "emitterAddress",
+                          "type": "address"
+                        },
+                        {
+                          "internalType": "bytes32[]",
+                          "name": "topics",
+                          "type": "bytes32[]"
+                        },
+                        {
+                          "internalType": "bytes",
+                          "name": "data",
+                          "type": "bytes"
+                        },
+                        {
+                          "internalType": "bool",
+                          "name": "removed",
+                          "type": "bool"
+                        }
+                      ],
+                      "internalType": "struct IEVMTransaction.Event[]",
+                      "name": "events",
+                      "type": "tuple[]"
+                    }
+                  ],
+                  "internalType": "struct IEVMTransaction.ResponseBody",
+                  "name": "responseBody",
+                  "type": "tuple"
+                }
+              ],
+              "internalType": "struct IEVMTransaction.Response",
+              "name": "data",
+              "type": "tuple"
+            }
+          ],
+          "internalType": "struct IEVMTransaction.Proof",
+          "name": "",
+          "type": "tuple"
+        }
+      ],
+      "name": "verifyEVMTransaction",
+      "outputs": [
+        {
+          "internalType": "bool",
+          "name": "",
+          "type": "bool"
+        }
+      ],
+      "stateMutability": "pure",
+      "type": "function"
+    }
+  ],
+  "bytecode": "0x608060405234801561001057600080fd5b5060c78061001f6000396000f3fe6080604052348015600f57600080fd5b506004361060285760003560e01c806358fbe9e114602d575b600080fd5b603e60383660046052565b50600190565b604051901515815260200160405180910390f35b600060208284031215606357600080fd5b813567ffffffffffffffff811115607957600080fd5b820160408185031215608a57600080fd5b939250505056fea2646970667358221220336787f29640906c3424d3da753ac683f1e208fefb17e4b16ae026136bbe6ddf64736f6c63430008130033",
+  "deployedBytecode": "0x6080604052348015600f57600080fd5b506004361060285760003560e01c806358fbe9e114602d575b600080fd5b603e60383660046052565b50600190565b604051901515815260200160405180910390f35b600060208284031215606357600080fd5b813567ffffffffffffffff811115607957600080fd5b820160408185031215608a57600080fd5b939250505056fea2646970667358221220336787f29640906c3424d3da753ac683f1e208fefb17e4b16ae026136bbe6ddf64736f6c63430008130033",
+  "linkReferences": {},
+  "deployedLinkReferences": {}
+}
