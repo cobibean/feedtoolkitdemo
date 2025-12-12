@@ -103,7 +103,7 @@ async function readSupabaseData(): Promise<FeedsData> {
       address: r.address as `0x${string}`,
       minRelayInterval: r.min_relay_interval,
       maxPriceAge: r.max_price_age,
-      supportedChains: r.supported_chains || [],
+      supportedChainIds: r.supported_chains || [],
       deployedAt: r.deployed_at,
       deployedBy: r.deployed_by as `0x${string}`,
     }));
@@ -196,7 +196,7 @@ async function addSupabaseRelay(relay: StoredRelay): Promise<{ success: boolean;
       address: relay.address,
       min_relay_interval: relay.minRelayInterval,
       max_price_age: relay.maxPriceAge,
-      supported_chains: relay.supportedChains || [],
+      supported_chains: relay.supportedChainIds || [],
       deployed_at: relay.deployedAt,
       deployed_by: relay.deployedBy,
     });
