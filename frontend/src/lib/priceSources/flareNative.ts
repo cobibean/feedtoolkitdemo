@@ -132,6 +132,14 @@ export function sqrtPriceX96ToPrice(
  * Read price directly from a Flare-native V3 pool using slot0()
  * 
  * This is the core function for FLARE_NATIVE feeds - no FDC involved.
+ * 
+ * @param poolAddress - V3 pool contract address
+ * @param token0Decimals - Decimals for token0
+ * @param token1Decimals - Decimals for token1
+ * @param invertPrice - Whether to invert the price
+ * @param outputDecimals - Output decimal precision (default 6)
+ * @param originChainId - Chain ID for provenance (14 = Flare, 114 = Coston2)
+ * @param client - Optional viem PublicClient
  */
 export async function readFlareNativePrice(
   poolAddress: `0x${string}`,
@@ -139,6 +147,7 @@ export async function readFlareNativePrice(
   token1Decimals: number,
   invertPrice: boolean,
   outputDecimals: number = 6,
+  originChainId: number = 14,
   client?: PublicClient
 ): Promise<DirectStateResult> {
   // Create client if not provided
@@ -178,8 +187,8 @@ export async function readFlareNativePrice(
   const provenance: PriceProvenance = {
     sourceKind: 'FLARE_NATIVE',
     method: 'SLOT0_SPOT',
-    originChain: 'Flare',
-    originChainId: 14,
+    originChain: originChainId === 114 ? 'Coston2' : 'Flare',
+    originChainId: originChainId,
     timestamp: Number(block.timestamp),
     blockNumber: Number(blockNumber),
     sqrtPriceX96: sqrtPriceX96.toString(),
@@ -209,6 +218,7 @@ export async function readFlareNativeTWAP(
   invertPrice: boolean,
   secondsAgo: number = 300,
   outputDecimals: number = 6,
+  originChainId: number = 14,
   client?: PublicClient
 ): Promise<DirectStateResult> {
   const publicClient = client ?? createPublicClient({
@@ -260,8 +270,8 @@ export async function readFlareNativeTWAP(
   const provenance: PriceProvenance = {
     sourceKind: 'FLARE_NATIVE',
     method: 'TWAP_OBSERVE',
-    originChain: 'Flare',
-    originChainId: 14,
+    originChain: originChainId === 114 ? 'Coston2' : 'Flare',
+    originChainId: originChainId,
     timestamp: Number(block.timestamp),
     blockNumber: Number(blockNumber),
     sqrtPriceX96: sqrtPriceX96.toString(),

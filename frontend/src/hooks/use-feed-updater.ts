@@ -266,7 +266,8 @@ interface UseFeedUpdaterResult {
     poolAddress: `0x${string}`,
     token0Decimals: number,
     token1Decimals: number,
-    invertPrice: boolean
+    invertPrice: boolean,
+    originChainId?: number
   ) => Promise<DirectStateResult | null>;
   progress: UpdateProgress;
   isUpdating: boolean;
@@ -314,7 +315,8 @@ export function useFeedUpdater(): UseFeedUpdaterResult {
     poolAddress: `0x${string}`,
     token0Decimals: number,
     token1Decimals: number,
-    invertPrice: boolean
+    invertPrice: boolean,
+    originChainId: number = 14
   ): Promise<DirectStateResult | null> => {
     setIsUpdating(true);
     setCancelled(false);
@@ -329,15 +331,19 @@ export function useFeedUpdater(): UseFeedUpdaterResult {
       });
     };
 
+    const chainName = originChainId === 114 ? 'Coston2' : 'Flare';
+
     try {
-      updateProgress('reading-native-state', 'Reading price from Flare pool (direct state read)...');
+      updateProgress('reading-native-state', `Reading price from ${chainName} pool (direct state read)...`);
 
       // Direct on-chain state read - no FDC involved
       const result = await readFlareNativePrice(
         poolAddress,
         token0Decimals,
         token1Decimals,
-        invertPrice
+        invertPrice,
+        6,  // outputDecimals
+        originChainId
       );
 
       console.log('[FeedUpdater] FLARE_NATIVE direct state result:', {
@@ -397,7 +403,7 @@ export function useFeedUpdater(): UseFeedUpdaterResult {
     // FLARE_NATIVE PATH: Direct on-chain state read (no FDC)
     if (sourceKind === 'FLARE_NATIVE') {
       console.log('[FeedUpdater] Using FLARE_NATIVE path - direct state read, no FDC');
-      await updateNativeFeed(poolAddress, token0Decimals, token1Decimals, invertPrice);
+      await updateNativeFeed(poolAddress, token0Decimals, token1Decimals, invertPrice, sourceChainId);
       return;
     }
 

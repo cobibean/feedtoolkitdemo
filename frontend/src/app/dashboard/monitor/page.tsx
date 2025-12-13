@@ -637,18 +637,23 @@ export default function MonitorPage() {
     const sourceChainId = normalized.sourceChain.id;
     const isRelayFeed = normalized.sourceChain.category === 'relay';
 
-    // For direct chains: need a recorder
-    // For relay chains: need a relay
-    if (isRelayFeed) {
-      if (!feed.priceRelayAddress) {
-        toast.error('Price relay address not found');
-        return;
-      }
-    } else {
-      const recorder = recorders.find(r => r.address === feed.priceRecorderAddress);
-      if (!recorder) {
-        toast.error('Price recorder not found');
-        return;
+    // Determine source kind for routing
+    const feedSourceKind = feed.sourceKind || getSourceKind(sourceChainId);
+    
+    // Only validate recorder/relay for FDC_EXTERNAL feeds
+    // FLARE_NATIVE feeds use direct state reads and don't need a recorder
+    if (feedSourceKind === 'FDC_EXTERNAL') {
+      if (isRelayFeed) {
+        if (!feed.priceRelayAddress) {
+          toast.error('Price relay address not found');
+          return;
+        }
+      } else {
+        const recorder = recorders.find(r => r.address === feed.priceRecorderAddress);
+        if (!recorder) {
+          toast.error('Price recorder not found');
+          return;
+        }
       }
     }
 

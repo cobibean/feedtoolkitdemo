@@ -84,7 +84,9 @@ export default function VerifyPage() {
         poolAddress,
         feed.token0.decimals,
         feed.token1.decimals,
-        feed.invertPrice
+        feed.invertPrice,
+        6,  // outputDecimals
+        normalized.sourceChain.id  // originChainId (14 for Flare, 114 for Coston2)
       );
 
       const elapsedMs = Date.now() - startTime;
