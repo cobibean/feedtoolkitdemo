@@ -10,6 +10,8 @@ import {
 } from '@rainbow-me/rainbowkit/wallets';
 import { type Chain } from 'viem';
 
+type RainbowKitChain = Chain & { iconUrl?: string; iconBackground?: string };
+
 type WagmiGlobal = typeof globalThis & {
   __flareForwardWagmiConnectors?: ReturnType<typeof connectorsForWallets>;
   __flareForwardWagmiConfig?: ReturnType<typeof createConfig>;
@@ -31,7 +33,7 @@ export const flare = {
   blockExplorers: {
     default: { name: 'Flare Explorer', url: 'https://flare-explorer.flare.network' },
   },
-} as const satisfies Chain;
+} as const satisfies RainbowKitChain;
 
 // Define Ethereum Mainnet (NEW)
 export const ethereum = {
@@ -45,7 +47,7 @@ export const ethereum = {
   blockExplorers: {
     default: { name: 'Etherscan', url: 'https://etherscan.io' },
   },
-} as const satisfies Chain;
+} as const satisfies RainbowKitChain;
 
 // Define Sepolia Testnet (NEW - for testing)
 export const sepolia = {
@@ -60,7 +62,7 @@ export const sepolia = {
     default: { name: 'Sepolia Etherscan', url: 'https://sepolia.etherscan.io' },
   },
   testnet: true,
-} as const satisfies Chain;
+} as const satisfies RainbowKitChain;
 
 // Define Coston2 Testnet (kept for reference)
 export const coston2 = {
@@ -77,7 +79,7 @@ export const coston2 = {
     default: { name: 'Coston2 Explorer', url: 'https://coston2-explorer.flare.network' },
   },
   testnet: true,
-} as const satisfies Chain;
+} as const satisfies RainbowKitChain;
 
 // Include Flare testnet + Ethereum testnet in chains array for cross-chain support
 const chains = [flare, coston2, ethereum, sepolia] as const;
