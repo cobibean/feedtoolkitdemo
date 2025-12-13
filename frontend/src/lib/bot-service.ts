@@ -14,6 +14,7 @@ import { flare } from 'viem/chains';
 import { SUPPORTED_CHAINS, isRelayChain, getChainById, type SupportedChain } from './chains';
 import { PRICE_RECORDER_ABI } from './artifacts/PriceRecorder';
 import { PRICE_RELAY_ABI } from './artifacts/PriceRelay';
+import { getSourceKind } from './types';
 import type { StoredFeed, StoredRelay, FeedsData } from './types';
 
 // ============================================================
@@ -61,6 +62,11 @@ export interface BotStats {
 export interface BotConfig {
   checkIntervalSeconds: number;
   maxRetries: number;
+  /**
+   * Minimum seconds between native on-chain updates (slot0 -> write).
+   * Only applies to FLARE_NATIVE feeds.
+   */
+  nativeUpdateIntervalSeconds: number;
   privateKey?: string;
   autoStart: boolean;
   /**
@@ -77,6 +83,7 @@ export interface BotConfig {
 const DEFAULT_CONFIG: BotConfig = {
   checkIntervalSeconds: 60,
   maxRetries: 2,
+  nativeUpdateIntervalSeconds: 300,
   autoStart: false,
   selectedFeedIds: undefined,
 };
@@ -100,6 +107,7 @@ function getRequiredConfirmations(chainId: number): number {
 
 const CUSTOM_FEED_ABI = parseAbi([
   'function updateFromProof((bytes32[] merkleProof, (bytes32 attestationType, bytes32 sourceId, uint64 votingRound, uint64 lowestUsedTimestamp, (bytes32 transactionHash, uint16 requiredConfirmations, bool provideInput, bool listEvents, uint32[] logIndices) requestBody, (uint64 blockNumber, uint64 timestamp, address sourceAddress, bool isDeployment, address receivingAddress, uint256 value, bytes input, uint8 status, (uint32 logIndex, address emitterAddress, bytes32[] topics, bytes data, bool removed)[] events) responseBody) data) _proof) external',
+  'function updateFromNativePool() external',
   'function latestValue() view returns (uint256)',
   'function lastUpdateTimestamp() view returns (uint64)',
   'function updateCount() view returns (uint256)',
@@ -204,7 +212,10 @@ export class BotService {
       this.stats.startTime = new Date().toISOString();
       
       this.setStatus('running');
-      this.log('info', `▶️ Bot started! Check interval: ${this.config.checkIntervalSeconds}s`);
+      this.log(
+        'info',
+        `▶️ Bot started! Tick: ${this.config.checkIntervalSeconds}s (native min: ${this.config.nativeUpdateIntervalSeconds}s)`
+      );
 
       this.runMainLoop();
 
@@ -293,7 +304,15 @@ export class BotService {
         await this.updateFeed(feed);
       } else {
         this.stats.lastCheckNote = `Not ready: ${feed.alias}`;
-        this.log('debug', `⏭️ ${feed.alias} not eligible yet (interval not elapsed / canRelay=false).`);
+        const sourceChainId = feed.sourceChain?.id || 14;
+        const isRelay = isRelayChain(sourceChainId);
+        const sourceKind = feed.sourceKind || getSourceKind(sourceChainId);
+        const reason = isRelay
+          ? 'canRelay=false'
+          : sourceKind === 'FLARE_NATIVE'
+            ? `native min interval ${this.config.nativeUpdateIntervalSeconds}s`
+            : 'interval not elapsed';
+        this.log('debug', `⏭️ ${feed.alias} not eligible yet (${reason}).`);
       }
 
     } catch (error) {
@@ -334,6 +353,7 @@ export class BotService {
 
     const sourceChainId = feed.sourceChain?.id || 14;
     const isRelay = isRelayChain(sourceChainId);
+    const sourceKind = feed.sourceKind || getSourceKind(sourceChainId);
 
     if (isRelay) {
       // For relay feeds, check the PriceRelay contract
@@ -351,6 +371,35 @@ export class BotService {
         return false;
       }
     } else {
+      // Native feeds (Flare/Coston2): decide eligibility based on last on-chain update.
+      if (sourceKind === 'FLARE_NATIVE') {
+        const sourceChain = getChainById(sourceChainId);
+        if (!sourceChain) return false;
+
+        try {
+          const sourceClient =
+            sourceChainId === 14
+              ? this.flareClient
+              : createPublicClient({
+                  chain: toViemChain(sourceChainId, sourceChain),
+                  transport: http(sourceChain.rpcUrl),
+                });
+
+          const last = (await sourceClient.readContract({
+            address: feed.customFeedAddress,
+            abi: CUSTOM_FEED_ABI,
+            functionName: 'lastUpdateTimestamp',
+          })) as bigint;
+
+          const lastTs = Number(last);
+          if (!lastTs) return true;
+          const now = Math.floor(Date.now() / 1000);
+          return now - lastTs >= this.config.nativeUpdateIntervalSeconds;
+        } catch {
+          return false;
+        }
+      }
+
       // For direct feeds, check the PriceRecorder contract
       if (!feed.priceRecorderAddress) return false;
       
@@ -381,12 +430,15 @@ export class BotService {
     const sourceChainId = feed.sourceChain?.id || 14;
     const isRelay = isRelayChain(sourceChainId);
     const sourceChain = getChainById(sourceChainId);
+    const sourceKind = feed.sourceKind || getSourceKind(sourceChainId);
 
     this.log('info', `🚀 Updating ${feed.alias} (${sourceChain?.name || 'Unknown'} → Flare)`);
 
     try {
       if (isRelay) {
         return await this.updateRelayFeed(feed, startTime);
+      } else if (sourceKind === 'FLARE_NATIVE') {
+        return await this.updateNativeFeed(feed, startTime);
       } else {
         return await this.updateDirectFeed(feed, startTime);
       }
@@ -466,7 +518,11 @@ export class BotService {
       args: [poolAddress],
     });
 
-    this.log('info', `  ✅ Recorded, tx: ${recordHash.slice(0, 10)}...`);
+    this.log('info', `  ✅ Recorded, tx: ${recordHash.slice(0, 10)}...`, {
+      txHash: recordHash,
+      chainId: sourceChainId,
+      kind: 'tx',
+    });
 
     // Wait for source tx confirmations (important for ETH verifier stability)
     const receipt = await sourceClient.waitForTransactionReceipt({ hash: recordHash });
@@ -503,6 +559,88 @@ export class BotService {
       success: true,
       txHash: result.txHash,
       price: result.price,
+      duration,
+    };
+  }
+
+  private async updateNativeFeed(feed: StoredFeed, startTime: number): Promise<FeedUpdateResult> {
+    if (!this.flareClient || !this.walletClient) {
+      throw new Error('Clients not initialized');
+    }
+
+    const sourceChainId = feed.sourceChain?.id || 14;
+    const sourceChain = getChainById(sourceChainId);
+    if (!sourceChain) {
+      throw new Error(`Unknown source chain: ${sourceChainId}`);
+    }
+
+    const sourceClient =
+      sourceChainId === 14
+        ? this.flareClient
+        : createPublicClient({
+            chain: toViemChain(sourceChainId, sourceChain),
+            transport: http(sourceChain.rpcUrl),
+          });
+
+    const sourceWalletClient =
+      sourceChainId === 14
+        ? this.walletClient
+        : createWalletClient({
+            account: this.walletClient.account!,
+            chain: toViemChain(sourceChainId, sourceChain),
+            transport: http(sourceChain.rpcUrl),
+          });
+
+    this.log('info', `  ⚡ Native update on ${sourceChain.name} (slot0 → write)`);
+
+    const txHash = await sourceWalletClient.writeContract({
+      chain: null,
+      account: sourceWalletClient.account!,
+      address: feed.customFeedAddress,
+      abi: CUSTOM_FEED_ABI,
+      functionName: 'updateFromNativePool',
+    });
+
+    this.log('info', `  ✅ Native update tx: ${txHash.slice(0, 10)}...`, {
+      txHash,
+      chainId: sourceChainId,
+      kind: 'tx',
+    });
+
+    await sourceClient.waitForTransactionReceipt({ hash: txHash });
+
+    const [latestValue, lastUpdateTimestamp, updateCount] = await Promise.all([
+      sourceClient.readContract({
+        address: feed.customFeedAddress,
+        abi: CUSTOM_FEED_ABI,
+        functionName: 'latestValue',
+      }) as Promise<bigint>,
+      sourceClient.readContract({
+        address: feed.customFeedAddress,
+        abi: CUSTOM_FEED_ABI,
+        functionName: 'lastUpdateTimestamp',
+      }) as Promise<bigint>,
+      sourceClient.readContract({
+        address: feed.customFeedAddress,
+        abi: CUSTOM_FEED_ABI,
+        functionName: 'updateCount',
+      }) as Promise<bigint>,
+    ]);
+
+    const duration = Date.now() - startTime;
+    this.log('info', `  ✅ Native feed updated in ${Math.floor(duration / 1000)}s`);
+
+    this.stats.successfulUpdates++;
+    this.stats.totalUpdates++;
+    this.stats.lastUpdateTime = new Date().toISOString();
+    this.updateFeedStats(feed.id, true, latestValue.toString());
+
+    return {
+      feedId: feed.id,
+      feedAlias: feed.alias,
+      success: true,
+      txHash,
+      price: latestValue.toString(),
       duration,
     };
   }
@@ -572,7 +710,11 @@ export class BotService {
       ],
     });
 
-    this.log('info', `  ✅ Relayed, tx: ${relayHash.slice(0, 10)}...`);
+    this.log('info', `  ✅ Relayed, tx: ${relayHash.slice(0, 10)}...`, {
+      txHash: relayHash,
+      chainId: 14,
+      kind: 'tx',
+    });
 
     // Wait for relay tx to be mined + small buffer for verifier indexer ingestion
     await this.flareClient.waitForTransactionReceipt({ hash: relayHash });
@@ -693,6 +835,12 @@ export class BotService {
       functionName: 'requestAttestation',
       args: [abiEncodedRequest as `0x${string}`],
       value: BigInt('1000000000000000000'), // 1 FLR fee
+    });
+
+    this.log('info', `  🧾 Attestation tx: ${attestHash.slice(0, 10)}...`, {
+      txHash: attestHash,
+      chainId: 14,
+      kind: 'tx',
     });
 
     this.log('info', `  ⏳ Waiting for finalization...`);

@@ -12,6 +12,7 @@ import { Checkbox } from '@/components/ui/checkbox';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { useBot } from '@/hooks/use-bot';
 import { useFeeds } from '@/context/feeds-context';
+import { getChainExplorerUrl } from '@/lib/chains';
 import { 
   Play, 
   Square, 
@@ -54,12 +55,28 @@ function LogEntry({ entry }: { entry: BotLogEntry }) {
   };
 
   const time = new Date(entry.timestamp).toLocaleTimeString();
+  const txHash = typeof entry.data?.txHash === 'string' ? entry.data.txHash : null;
+  const chainId = typeof entry.data?.chainId === 'number' ? entry.data.chainId : null;
+  const txUrl = txHash && chainId ? getChainExplorerUrl(chainId, 'tx', txHash) : null;
 
   return (
     <div className={`font-mono text-xs ${levelColors[entry.level]} py-0.5`}>
       <span className="text-muted-foreground">[{time}]</span>{' '}
       <span>{levelIcons[entry.level]}</span>{' '}
       <span>{entry.message}</span>
+      {txUrl && (
+        <>
+          {' '}
+          <a
+            href={txUrl}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="underline underline-offset-2 hover:opacity-90"
+          >
+            Explorer
+          </a>
+        </>
+      )}
     </div>
   );
 }

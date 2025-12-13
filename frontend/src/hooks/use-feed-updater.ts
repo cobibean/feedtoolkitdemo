@@ -5,7 +5,7 @@ import { usePublicClient, useWalletClient, useChainId, useSwitchChain, useConfig
 import { getWalletClient } from 'wagmi/actions';
 import { decodeAbiParameters, parseAbiParameters, createPublicClient, http } from 'viem';
 import { getChainById as getSourceChainById, isRelayChain, type SupportedChain } from '@/lib/chains';
-import { flare, ethereum, sepolia } from '@/lib/wagmi-config';
+import { flare, ethereum, sepolia, coston2 } from '@/lib/wagmi-config';
 import { PRICE_RELAY_ABI } from '@/lib/artifacts/PriceRelay';
 import { readFlareNativePrice } from '@/lib/priceSources/flareNative';
 import { getSourceKind, type PriceProvenance, type DirectStateResult } from '@/lib/types';
@@ -190,6 +190,13 @@ const CUSTOM_FEED_ABI = [
   },
   {
     inputs: [],
+    name: 'updateFromNativePool',
+    outputs: [],
+    stateMutability: 'nonpayable',
+    type: 'function',
+  },
+  {
+    inputs: [],
     name: 'latestValue',
     outputs: [{ type: 'uint256' }],
     stateMutability: 'view',
@@ -223,6 +230,7 @@ export type UpdateStep =
   | 'relaying-price'
   // Flare-native steps (no FDC)
   | 'reading-native-state'
+  | 'writing-native-update'
   | 'native-success'
   // FDC steps
   | 'requesting-attestation'
@@ -264,6 +272,7 @@ interface UseFeedUpdaterResult {
   // Native-only update (skips FDC entirely)
   updateNativeFeed: (
     poolAddress: `0x${string}`,
+    feedAddress: `0x${string}`,
     token0Decimals: number,
     token1Decimals: number,
     invertPrice: boolean,
@@ -280,6 +289,7 @@ function getChainDefinition(chainId: number) {
     case 1: return ethereum;
     case 11155111: return sepolia;
     case 14: return flare;
+    case 114: return coston2;
     default: return flare;
   }
 }
@@ -313,6 +323,7 @@ export function useFeedUpdater(): UseFeedUpdaterResult {
    */
   const updateNativeFeed = useCallback(async (
     poolAddress: `0x${string}`,
+    feedAddress: `0x${string}`,
     token0Decimals: number,
     token1Decimals: number,
     invertPrice: boolean,
@@ -355,7 +366,67 @@ export function useFeedUpdater(): UseFeedUpdaterResult {
         tick: result.tick,
       });
 
-      updateProgress('native-success', 'Price read successfully from on-chain state!', {
+      updateProgress('reading-native-state', 'Price computed from pool state. Preparing on-chain update...', {
+        nativeResult: result,
+        provenance: result.provenance,
+      });
+
+      if (cancelled) throw new Error('Cancelled by user');
+
+      // Ensure wallet is on the chain where the feed contract is deployed.
+      if (chainId !== originChainId) {
+        updateProgress('switching-to-source', `Switching to ${chainName} for native update...`);
+        await switchChainAsync({ chainId: originChainId });
+        await new Promise(resolve => setTimeout(resolve, 1000));
+      }
+
+      const nativeWalletClient = await getWalletClient(wagmiConfig, { chainId: originChainId });
+      if (!nativeWalletClient) {
+        throw new Error(`Failed to get wallet client for ${chainName}. Please connect and switch your wallet.`);
+      }
+
+      updateProgress('writing-native-update', 'Confirm native update transaction in your wallet...', {
+        nativeResult: result,
+        provenance: result.provenance,
+      });
+
+      let updateTxHash: `0x${string}`;
+      try {
+        updateTxHash = await nativeWalletClient.writeContract({
+          chain: getChainDefinition(originChainId),
+          address: feedAddress,
+          abi: CUSTOM_FEED_ABI,
+          functionName: 'updateFromNativePool',
+        });
+      } catch (e) {
+        const message = (e as Error)?.message || 'Native update transaction failed';
+        throw new Error(
+          `${message}. If this is an older feed deployment, redeploy the feed to enable on-chain native updates.`
+        );
+      }
+
+      updateProgress('writing-native-update', 'Waiting for confirmation...', {
+        updateTxHash,
+        nativeResult: result,
+        provenance: result.provenance,
+      });
+
+      const nativeClient = createPublicClient({
+        chain: getChainDefinition(originChainId),
+        transport: http(),
+      });
+
+      const receipt = await nativeClient.waitForTransactionReceipt({
+        hash: updateTxHash,
+        timeout: 120_000,
+        pollingInterval: 2_000,
+      });
+      if (receipt.status === 'reverted') {
+        throw new Error('Native update transaction reverted');
+      }
+
+      updateProgress('native-success', 'Native update confirmed on-chain!', {
+        updateTxHash,
         nativeResult: result,
         provenance: result.provenance,
       });
@@ -403,7 +474,7 @@ export function useFeedUpdater(): UseFeedUpdaterResult {
     // FLARE_NATIVE PATH: Direct on-chain state read (no FDC)
     if (sourceKind === 'FLARE_NATIVE') {
       console.log('[FeedUpdater] Using FLARE_NATIVE path - direct state read, no FDC');
-      await updateNativeFeed(poolAddress, token0Decimals, token1Decimals, invertPrice, sourceChainId);
+      await updateNativeFeed(poolAddress, feedAddress, token0Decimals, token1Decimals, invertPrice, sourceChainId);
       return;
     }
 

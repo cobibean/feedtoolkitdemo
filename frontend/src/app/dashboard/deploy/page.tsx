@@ -62,6 +62,7 @@ export default function DeployPage() {
   const [sourceChainId, setSourceChainId] = useState<number>(14); // Default to Flare
   const sourceChain = getChainById(sourceChainId);
   const isRelaySourceChain = isRelayChain(sourceChainId);
+  const isNativeSourceChain = sourceChainId === 14 || sourceChainId === 114;
 
   // Filter recorders by selected source chain (only for direct chains)
   const chainRecorders = recorders.filter(r => {
@@ -396,7 +397,10 @@ export default function DeployPage() {
       // Properly checksum all addresses
       const checksummedPool = getAddress(poolAddress);
       const checksummedFdc = getAddress(fdcVerificationAddress);
-      const checksummedRecorder = !isRelaySourceChain ? getAddress(selectedRecorder) : undefined;
+      const checksummedRecorder =
+        !isRelaySourceChain && !isNativeSourceChain
+          ? getAddress(selectedRecorder)
+          : ('0x0000000000000000000000000000000000000000' as const);
       const checksummedRelay = isRelaySourceChain ? getAddress(selectedRelay) : undefined;
 
       // Deploy the correct feed contract on Flare using the fresh wallet client
@@ -415,7 +419,7 @@ export default function DeployPage() {
               invertPrice,            // _invertPrice
             ]
           : [
-              checksummedRecorder!,   // _priceRecorder (on source chain)
+              checksummedRecorder,    // _priceRecorder (0x0 for native feeds)
               checksummedPool,        // _poolAddress (on source chain)
               feedAlias,              // _feedName
               checksummedFdc,         // _fdcVerificationAddress
@@ -473,7 +477,9 @@ export default function DeployPage() {
         // For relay chains: use priceRelayAddress
         ...(isRelaySourceChain
           ? { priceRelayAddress: selectedRelay as `0x${string}` }
-          : { priceRecorderAddress: selectedRecorder as `0x${string}` }
+          : feedSourceKind === 'FLARE_NATIVE'
+            ? {}
+            : { priceRecorderAddress: selectedRecorder as `0x${string}` }
         ),
         // Token info
         token0: {
@@ -826,6 +832,14 @@ export default function DeployPage() {
                     ))}
                   </select>
                 </div>
+              ) : isNativeSourceChain ? (
+                <Alert className="bg-emerald-50 border-emerald-200 dark:bg-emerald-950 dark:border-emerald-900">
+                  <CheckCircle2 className="h-4 w-4 text-emerald-600" />
+                  <AlertDescription className="text-sm">
+                    <strong>Native Feed:</strong> No PriceRecorder needed. Updates read the pool&apos;s on-chain state
+                    (`slot0`) directly and write the computed price into the feed contract.
+                  </AlertDescription>
+                </Alert>
               ) : (
                 <div className="space-y-2">
                   <Label>Price Recorder on {sourceChain?.name}</Label>
@@ -948,7 +962,7 @@ export default function DeployPage() {
                   className={isRelaySourceChain ? "bg-yellow-500 hover:bg-yellow-600 text-black" : "bg-brand-500 hover:bg-brand-600"}
                   onClick={handleDeployFeed}
                   disabled={
-                    (isRelaySourceChain ? !selectedRelay : !selectedRecorder) || 
+                    (isRelaySourceChain ? !selectedRelay : (!isNativeSourceChain && !selectedRecorder)) || 
                     !poolAddress || 
                     !feedAlias
                   }

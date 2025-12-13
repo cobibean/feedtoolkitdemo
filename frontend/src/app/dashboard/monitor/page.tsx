@@ -78,6 +78,7 @@ const STEP_PROGRESS: Record<UpdateStep, number> = {
   'relaying-price': 20,
   // Flare-native steps (no FDC)
   'reading-native-state': 50,
+  'writing-native-update': 70,
   'native-success': 100,
   // FDC steps
   'requesting-attestation': 30,
@@ -154,19 +155,21 @@ function FeedCard({
   const feedSourceKind: SourceKind = feed.sourceKind || getSourceKind(sourceChain.id);
   const feedMethod: PriceMethod = feed.method || (feedSourceKind === 'FLARE_NATIVE' ? 'SLOT0_SPOT' : 'FDC_ATTESTATION');
 
-  const effectiveLastUpdateTimestamp =
-    feedSourceKind === 'FLARE_NATIVE' && nativeRead?.timestamp
-      ? nativeRead.timestamp
-      : lastUpdateTimestamp;
+  const hasOnchainUpdate = lastUpdateTimestamp > 0;
+  const shouldUseNativeReadCache = feedSourceKind === 'FLARE_NATIVE' && !hasOnchainUpdate;
 
-  const effectiveValue =
-    feedSourceKind === 'FLARE_NATIVE' && nativeRead?.value !== undefined
-      ? nativeRead.value
-      : latestValue;
+  const effectiveLastUpdateTimestamp = shouldUseNativeReadCache
+    ? (nativeRead?.timestamp ?? 0)
+    : lastUpdateTimestamp;
 
-  const effectiveCountLabel = feedSourceKind === 'FLARE_NATIVE' ? 'Reads' : 'Updates';
+  const effectiveValue = shouldUseNativeReadCache
+    ? (nativeRead?.value ?? latestValue)
+    : latestValue;
+
+  const effectiveCountLabel =
+    shouldUseNativeReadCache ? 'Reads' : 'Updates';
   const effectiveCountValue =
-    feedSourceKind === 'FLARE_NATIVE' ? nativeReadCount ?? 0 : updateCount;
+    shouldUseNativeReadCache ? nativeReadCount ?? 0 : updateCount;
 
   const freshness = getFeedFreshness(effectiveLastUpdateTimestamp);
 
@@ -176,7 +179,7 @@ function FeedCard({
     old: { color: 'bg-red-500', text: 'Old', icon: AlertCircle },
     never: {
       color: 'bg-gray-500',
-      text: feedSourceKind === 'FLARE_NATIVE' ? 'Not read yet' : 'Never updated',
+      text: shouldUseNativeReadCache ? 'Not read yet' : 'Never updated',
       icon: Activity,
     },
   };
@@ -248,7 +251,7 @@ function FeedCard({
           <div className="flex items-center justify-between gap-3">
             <div className="text-sm text-muted-foreground">Current Price</div>
             <div className="text-xs text-muted-foreground">
-              {feedSourceKind === 'FLARE_NATIVE' ? 'Last read' : 'Last update'}:{' '}
+              {shouldUseNativeReadCache ? 'Last read' : 'Last update'}:{' '}
               {formatTimeAgo(effectiveLastUpdateTimestamp)}
             </div>
           </div>
@@ -280,15 +283,15 @@ function FeedCard({
           {isUpdating ? (
             <>
               <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-              {feedSourceKind === 'FLARE_NATIVE' ? 'Reading...' : 'Updating...'}
+              {feedSourceKind === 'FLARE_NATIVE' ? 'Updating...' : 'Updating...'}
             </>
           ) : (
             <>
               <Play className="w-4 h-4 mr-2" />
               {feedSourceKind === 'FLARE_NATIVE' ? (
                 <>
-                  Read Price
-                  <span className="ml-1 text-xs opacity-75">(Direct)</span>
+                  Update Feed
+                  <span className="ml-1 text-xs opacity-75">(Native)</span>
                 </>
               ) : (
                 <>
@@ -480,7 +483,7 @@ function UpdateProgressModal({
                 <Loader2 className="w-5 h-5 animate-spin text-brand-500" />
               )}
               {isNativeSuccess
-                ? 'Price Read'
+                ? 'Native Feed Updated!'
                 : isSuccess
                   ? 'Feed Updated!'
                   : isError
@@ -512,7 +515,17 @@ function UpdateProgressModal({
           {progress.step === 'switching-to-source' && sourceChainName && (
             <div className="p-3 rounded-lg bg-secondary/50 text-xs text-muted-foreground">
               <p className="font-medium mb-1">🔄 Network Switch Required</p>
-              <p>Please approve switching to {sourceChainName} in your wallet to record the price.</p>
+              <p>Please approve switching to {sourceChainName} in your wallet to proceed.</p>
+            </div>
+          )}
+
+          {progress.step === 'writing-native-update' && (
+            <div className="p-3 rounded-lg bg-emerald-50 dark:bg-emerald-950 text-xs text-muted-foreground">
+              <p className="font-medium mb-1">⚡ Native Update</p>
+              <p>
+                Please confirm the transaction in your wallet. This writes the computed <code>slot0()</code> price into
+                the feed contract.
+              </p>
             </div>
           )}
 
@@ -553,6 +566,19 @@ function UpdateProgressModal({
                   <p className="text-sm font-medium">Direct State Read Complete</p>
                 </div>
                 <div className="p-3 rounded-lg bg-emerald-50 dark:bg-emerald-900/20 text-xs space-y-2">
+                  {progress.updateTxHash && (
+                    <div className="flex justify-between">
+                      <span className="text-muted-foreground">Update tx:</span>
+                      <a
+                        href={getExplorerUrl(progress.provenance?.originChainId ?? 14, 'tx', progress.updateTxHash)}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="font-mono underline underline-offset-2"
+                      >
+                        {progress.updateTxHash.slice(0, 10)}…{progress.updateTxHash.slice(-8)}
+                      </a>
+                    </div>
+                  )}
                   <div className="flex justify-between">
                     <span className="text-muted-foreground">Price:</span>
                     <span className="font-mono font-semibold">
@@ -581,7 +607,7 @@ function UpdateProgressModal({
                   </div>
                 </div>
                 <p className="text-[10px] text-muted-foreground italic">
-                  ⚡ No FDC attestation used — price read directly from Flare pool via slot0()
+                  ⚡ No FDC attestation used — price read from pool state via <code>slot0()</code> and written on-chain
                 </p>
               </div>
             </div>
@@ -748,7 +774,7 @@ export default function MonitorPage() {
 
   // Also refetch immediately when we hit a success state (even before the modal is closed).
   useEffect(() => {
-    if (progress.step === 'success') {
+    if (progress.step === 'success' || progress.step === 'native-success') {
       setRefreshKey(Date.now());
     }
   }, [progress.step]);

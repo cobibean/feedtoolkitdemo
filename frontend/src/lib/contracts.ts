@@ -118,6 +118,13 @@ export const CUSTOM_FEED_ABI = [
   },
   {
     inputs: [],
+    name: 'updateFromNativePool',
+    outputs: [],
+    stateMutability: 'nonpayable',
+    type: 'function',
+  },
+  {
+    inputs: [],
     name: 'latestValue',
     outputs: [{ name: '', type: 'uint256' }],
     stateMutability: 'view',
@@ -236,4 +243,3 @@ export const ERC20_ABI = [
     type: 'function',
   },
 ] as const;
-

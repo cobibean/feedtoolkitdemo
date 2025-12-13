@@ -90,6 +90,25 @@ interface IFlareContractRegistry {
     ) external view returns (address);
 }
 
+/**
+ * @title IUniswapV3Pool
+ * @notice Minimal interface for Flare-native pool state reads
+ */
+interface IUniswapV3Pool {
+    function slot0()
+        external
+        view
+        returns (
+            uint160 sqrtPriceX96,
+            int24 tick,
+            uint16 observationIndex,
+            uint16 observationCardinality,
+            uint16 observationCardinalityNext,
+            uint8 feeProtocol,
+            bool unlocked
+        );
+}
+
 contract PoolPriceCustomFeed is IICustomFeed {
     // ==================== Immutable Configuration ====================
 
@@ -110,6 +129,9 @@ contract PoolPriceCustomFeed is IICustomFeed {
 
     /// @notice Uniswap V3 pool address this feed is locked to.
     address public immutable poolAddress;
+
+    /// @notice True when this feed is updated via direct pool state (no FDC).
+    bool public immutable isNativeFeed;
 
     /// @notice FDC verification contract used for proof validation.
     IFdcVerification private immutable fdcVerification;
@@ -196,9 +218,7 @@ contract PoolPriceCustomFeed is IICustomFeed {
         uint8 _token1Decimals,
         bool _invertPrice
     ) {
-        require(_priceRecorder != address(0), "Invalid recorder address");
         require(_poolAddress != address(0), "Invalid pool address");
-        require(_fdcVerificationAddress != address(0), "Invalid FDC address");
         require(
             _token0Decimals > 0 && _token0Decimals <= 18,
             "Invalid token0 decimals"
@@ -209,6 +229,7 @@ contract PoolPriceCustomFeed is IICustomFeed {
         );
 
         owner = msg.sender;
+        isNativeFeed = (_priceRecorder == address(0));
         priceRecorderAddress = _priceRecorder;
         poolAddress = _poolAddress;
         acceptingUpdates = true;
@@ -219,7 +240,12 @@ contract PoolPriceCustomFeed is IICustomFeed {
         // Generate feed ID: 0x21 + hex(feedName) + zero padding
         _feedId = _generateFeedId(_feedName);
 
-        // Set FDC verification contract
+        // Native feeds do not use FDC/PriceRecorder; external feeds do.
+        if (!isNativeFeed) {
+            require(_priceRecorder != address(0), "Invalid recorder address");
+            require(_fdcVerificationAddress != address(0), "Invalid FDC address");
+        }
+
         fdcVerification = IFdcVerification(_fdcVerificationAddress);
     }
 
@@ -259,6 +285,7 @@ contract PoolPriceCustomFeed is IICustomFeed {
      * @dev Anyone can call this to update the feed with valid proof
      */
     function updateFromProof(IEVMTransaction.Proof calldata _proof) external {
+        require(!isNativeFeed, "Native feed: use updateFromNativePool");
         require(acceptingUpdates, "Updates paused");
 
         uint256 gasStart = gasleft();
@@ -302,6 +329,35 @@ contract PoolPriceCustomFeed is IICustomFeed {
             newPrice,
             timestamp
         );
+    }
+
+    /**
+     * @notice Updates feed using on-chain pool state (slot0) for Flare-native pools.
+     * @dev Anyone can call; it reads `poolAddress.slot0()` and stores the computed price.
+     */
+    function updateFromNativePool() external {
+        require(isNativeFeed, "Not a native feed");
+        require(acceptingUpdates, "Updates paused");
+
+        (
+            uint160 sqrtPriceX96,
+            ,
+            ,
+            ,
+            ,
+            ,
+            bool unlocked
+        ) = IUniswapV3Pool(poolAddress).slot0();
+        require(unlocked, "Pool locked");
+
+        uint256 newPrice = _calculatePrice(sqrtPriceX96);
+        uint64 timestamp = uint64(block.timestamp);
+
+        latestValue = newPrice;
+        lastUpdateTimestamp = timestamp;
+        updateCount++;
+
+        emit FeedUpdated(newPrice, timestamp, block.number, msg.sender);
     }
 
     /**
@@ -559,4 +615,3 @@ contract PoolPriceCustomFeed is IICustomFeed {
         uint256 totalProofsVerified;
     }
 }
-
