@@ -95,9 +95,27 @@ interface FeedCardProps {
   isUpdating: boolean;
   normalizedFeed: StoredFeed & { sourceChain: SourceChain; sourcePoolAddress: `0x${string}` };
   refreshKey: number;
+  nativeRead?: {
+    value: bigint;
+    decimals: number;
+    timestamp: number;
+    blockNumber: bigint;
+    sqrtPriceX96: bigint;
+    tick: number;
+  };
+  nativeReadCount?: number;
 }
 
-function FeedCard({ feed, chainId, onUpdateClick, isUpdating, normalizedFeed, refreshKey }: FeedCardProps) {
+function FeedCard({
+  feed,
+  chainId,
+  onUpdateClick,
+  isUpdating,
+  normalizedFeed,
+  refreshKey,
+  nativeRead,
+  nativeReadCount,
+}: FeedCardProps) {
   const { data, isLoading, refetch } = useReadContracts({
     contracts: [
       {
@@ -128,7 +146,6 @@ function FeedCard({ feed, chainId, onUpdateClick, isUpdating, normalizedFeed, re
   const updateCount = Number(data?.[2]?.result || 0);
   const feedId = data?.[3]?.result as string | undefined;
 
-  const freshness = getFeedFreshness(lastUpdateTimestamp);
   const sourceChain = normalizedFeed.sourceChain;
   const isFlareSource = sourceChain.id === 14 || sourceChain.id === 114;
   const isRelayFeed = sourceChain.category === 'relay';
@@ -137,11 +154,31 @@ function FeedCard({ feed, chainId, onUpdateClick, isUpdating, normalizedFeed, re
   const feedSourceKind: SourceKind = feed.sourceKind || getSourceKind(sourceChain.id);
   const feedMethod: PriceMethod = feed.method || (feedSourceKind === 'FLARE_NATIVE' ? 'SLOT0_SPOT' : 'FDC_ATTESTATION');
 
+  const effectiveLastUpdateTimestamp =
+    feedSourceKind === 'FLARE_NATIVE' && nativeRead?.timestamp
+      ? nativeRead.timestamp
+      : lastUpdateTimestamp;
+
+  const effectiveValue =
+    feedSourceKind === 'FLARE_NATIVE' && nativeRead?.value !== undefined
+      ? nativeRead.value
+      : latestValue;
+
+  const effectiveCountLabel = feedSourceKind === 'FLARE_NATIVE' ? 'Reads' : 'Updates';
+  const effectiveCountValue =
+    feedSourceKind === 'FLARE_NATIVE' ? nativeReadCount ?? 0 : updateCount;
+
+  const freshness = getFeedFreshness(effectiveLastUpdateTimestamp);
+
   const statusConfig = {
     fresh: { color: 'bg-green-500', text: 'Fresh', icon: CheckCircle2 },
     aging: { color: 'bg-yellow-500', text: 'Aging', icon: Clock },
     old: { color: 'bg-red-500', text: 'Old', icon: AlertCircle },
-    never: { color: 'bg-gray-500', text: 'Never updated', icon: Activity },
+    never: {
+      color: 'bg-gray-500',
+      text: feedSourceKind === 'FLARE_NATIVE' ? 'Not read yet' : 'Never updated',
+      icon: Activity,
+    },
   };
 
   const status = statusConfig[freshness];
@@ -211,19 +248,20 @@ function FeedCard({ feed, chainId, onUpdateClick, isUpdating, normalizedFeed, re
           <div className="flex items-center justify-between gap-3">
             <div className="text-sm text-muted-foreground">Current Price</div>
             <div className="text-xs text-muted-foreground">
-              Last update: {formatTimeAgo(lastUpdateTimestamp)}
+              {feedSourceKind === 'FLARE_NATIVE' ? 'Last read' : 'Last update'}:{' '}
+              {formatTimeAgo(effectiveLastUpdateTimestamp)}
             </div>
           </div>
           <div className="mt-2 text-3xl font-display tracking-tight truncate">
-            {isLoading ? '...' : formatPrice(latestValue)}
+            {isLoading ? '...' : formatPrice(effectiveValue)}
           </div>
         </div>
 
         {/* Stats */}
         <div className="grid grid-cols-2 gap-4">
           <div className="min-w-0">
-            <div className="text-xs text-muted-foreground">Updates</div>
-            <div className="mt-1 text-lg font-semibold leading-none">{updateCount}</div>
+            <div className="text-xs text-muted-foreground">{effectiveCountLabel}</div>
+            <div className="mt-1 text-lg font-semibold leading-none">{effectiveCountValue}</div>
           </div>
           <div className="min-w-0">
             <div className="text-xs text-muted-foreground">Source</div>
@@ -441,7 +479,13 @@ function UpdateProgressModal({
               ) : (
                 <Loader2 className="w-5 h-5 animate-spin text-brand-500" />
               )}
-              {isSuccess ? 'Feed Updated!' : isError ? 'Update Failed' : 'Updating Feed'}
+              {isNativeSuccess
+                ? 'Price Read'
+                : isSuccess
+                  ? 'Feed Updated!'
+                  : isError
+                    ? 'Update Failed'
+                    : 'Updating Feed'}
             </CardTitle>
             {!isSuccess && !isError && (
               <Button variant="ghost" size="icon" onClick={onCancel}>
@@ -628,6 +672,20 @@ export default function MonitorPage() {
   
   const [updatingFeedId, setUpdatingFeedId] = useState<string | null>(null);
   const [refreshKey, setRefreshKey] = useState<number>(0);
+  const [nativeReadsByFeedId, setNativeReadsByFeedId] = useState<
+    Record<
+      string,
+      {
+        value: bigint;
+        decimals: number;
+        timestamp: number;
+        blockNumber: bigint;
+        sqrtPriceX96: bigint;
+        tick: number;
+      }
+    >
+  >({});
+  const [nativeReadCountByFeedId, setNativeReadCountByFeedId] = useState<Record<string, number>>({});
 
   // Get all feeds (no longer filtered by network since feeds are always on Flare)
   const allFeeds = feeds;
@@ -695,6 +753,16 @@ export default function MonitorPage() {
     }
   }, [progress.step]);
 
+  // For FLARE_NATIVE direct reads, cache the last read so the card can reflect it.
+  useEffect(() => {
+    if (progress.step !== 'native-success') return;
+    if (!updatingFeedId) return;
+    if (!progress.nativeResult) return;
+
+    setNativeReadsByFeedId(prev => ({ ...prev, [updatingFeedId]: progress.nativeResult! }));
+    setNativeReadCountByFeedId(prev => ({ ...prev, [updatingFeedId]: (prev[updatingFeedId] ?? 0) + 1 }));
+  }, [progress.step, progress.nativeResult, updatingFeedId]);
+
   const handleCloseModal = () => {
     if (isUpdating) {
       cancel();
@@ -744,7 +812,7 @@ export default function MonitorPage() {
               {allFeeds.length} Feed{allFeeds.length !== 1 ? 's' : ''} on Flare
             </h2>
             <p className="text-sm text-muted-foreground">
-              Feeds can source prices from Flare, Ethereum, Arbitrum, Base, Optimism, and Polygon
+              Feeds can source prices from Flare, Ethereum, and 17 additional EVM chains.
             </p>
           </div>
           <Button variant="outline" onClick={refresh}>
@@ -771,6 +839,8 @@ export default function MonitorPage() {
                   onUpdateClick={() => handleUpdateFeed(feed)}
                   isUpdating={isUpdating && updatingFeedId === feed.id}
                   refreshKey={refreshKey}
+                  nativeRead={nativeReadsByFeedId[feed.id]}
+                  nativeReadCount={nativeReadCountByFeedId[feed.id]}
                 />
               );
             })}
