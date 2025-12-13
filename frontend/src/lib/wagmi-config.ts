@@ -22,6 +22,8 @@ export const flare = {
   id: 14,
   name: 'Flare',
   nativeCurrency: { name: 'Flare', symbol: 'FLR', decimals: 18 },
+  iconUrl: '/flarelogo.png',
+  iconBackground: '#E62058',
   rpcUrls: {
     default: { http: ['https://flare-api.flare.network/ext/bc/C/rpc'] },
     public: { http: ['https://flare-api.flare.network/ext/bc/C/rpc'] },
@@ -65,6 +67,8 @@ export const coston2 = {
   id: 114,
   name: 'Coston2',
   nativeCurrency: { name: 'Coston2 Flare', symbol: 'C2FLR', decimals: 18 },
+  iconUrl: '/flarelogo.png',
+  iconBackground: '#E62058',
   rpcUrls: {
     default: { http: ['https://coston2-api.flare.network/ext/bc/C/rpc'] },
     public: { http: ['https://coston2-api.flare.network/ext/bc/C/rpc'] },
