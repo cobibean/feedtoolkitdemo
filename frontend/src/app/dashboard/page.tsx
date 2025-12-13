@@ -7,10 +7,15 @@ import { useFeeds } from '@/context/feeds-context';
 import { useChainId } from 'wagmi';
 import { Rocket, Activity, Database, ArrowRight } from 'lucide-react';
 import Link from 'next/link';
+import { getChainById as getWalletChainById, flare } from '@/lib/wagmi-config';
 
 export default function DashboardPage() {
   const { feeds, recorders, isLoading } = useFeeds();
   const chainId = useChainId();
+  const walletChain = getWalletChainById(chainId);
+  const walletNetworkLabel = walletChain
+    ? `${walletChain.name} ${walletChain.testnet ? 'Testnet' : 'Mainnet'}`
+    : `Unsupported (Chain ID: ${chainId})`;
 
   const networkFeeds = feeds.filter(f => f.network === 'flare');
   const networkRecorders = recorders.filter(r => r.network === 'flare');
@@ -56,14 +61,14 @@ export default function DashboardPage() {
           <Card>
             <CardHeader className="flex flex-row items-center justify-between pb-2">
               <CardTitle className="text-sm font-medium text-muted-foreground">
-                Network
+                Wallet Network
               </CardTitle>
               <div className="w-2 h-2 rounded-full bg-green-500" />
             </CardHeader>
             <CardContent>
-              <div className="text-3xl font-display">Mainnet</div>
+              <div className="text-3xl font-display">{walletNetworkLabel}</div>
               <p className="text-xs text-muted-foreground mt-1">
-                Chain ID: {chainId}
+                Home chain: {flare.name} Mainnet (Chain ID: {flare.id})
               </p>
             </CardContent>
           </Card>
@@ -193,4 +198,3 @@ export default function DashboardPage() {
     </div>
   );
 }
-
