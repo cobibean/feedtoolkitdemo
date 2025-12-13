@@ -114,9 +114,13 @@ export default function DeployPage() {
     setSelectedRecorder('');
   }, [sourceChainId]);
 
+  // Auto-switch to source chain ONLY when deploying a recorder (not feeds)
+  // Feeds are always deployed on Flare regardless of source chain
   useEffect(() => {
     if (!publicClient) return;
     if (!chainId) return;
+    // Only auto-switch when deploying a recorder on a direct chain
+    if (deployType !== 'recorder') return;
     if (!isDirectChain(sourceChainId)) return;
     if (chainId === sourceChainId) return;
 
@@ -147,7 +151,7 @@ export default function DeployPage() {
     return () => {
       active = false;
     };
-  }, [chainId, sourceChainId, sourceChain, switchChainAsync, publicClient]);
+  }, [chainId, sourceChainId, sourceChain, switchChainAsync, publicClient, deployType]);
 
   const suggestedAlias = useMemo(() => {
     if (!poolInfo?.token0Symbol || !poolInfo?.token1Symbol) return '';
@@ -286,6 +290,22 @@ export default function DeployPage() {
       });
 
       toast.success(`PriceRecorder deployed on ${sourceChain?.name}!`);
+
+      // If we deployed on a non-Flare chain, switch back to Flare
+      // This prepares the wallet for the feed deployment step (feeds always go on Flare)
+      if (sourceChainId !== 14 && sourceChainId !== 114) {
+        toast.info('Switching back to Flare for feed deployment...');
+        try {
+          await switchChainAsync({ chainId: 14 });
+          await waitForChainId(publicClient, 14, { chainName: 'Flare' });
+          toast.success('Wallet switched to Flare');
+        } catch (switchError) {
+          // Non-fatal: user can still manually switch before deploying feed
+          console.warn('Failed to auto-switch back to Flare:', switchError);
+          toast.warning('Please switch your wallet to Flare before deploying the feed.');
+        }
+      }
+
       setStep('success');
 
     } catch (e) {
@@ -374,8 +394,24 @@ export default function DeployPage() {
     }
   };
 
-  const handleGoToFeedFromRecorder = () => {
+  const handleGoToFeedFromRecorder = async () => {
     if (!deployedAddress) return;
+
+    // Ensure wallet is on Flare before entering feed deploy flow
+    // (feeds are always deployed on Flare regardless of source chain)
+    if (chainId !== 14 && publicClient) {
+      toast.info('Switching to Flare for feed deployment...');
+      try {
+        await switchChainAsync({ chainId: 14 });
+        await waitForChainId(publicClient, 14, { chainName: 'Flare' });
+        toast.success('Wallet switched to Flare');
+      } catch (switchError) {
+        // Non-fatal but warn user
+        console.warn('Failed to switch to Flare:', switchError);
+        toast.warning('Please switch your wallet to Flare before deploying the feed.');
+      }
+    }
+
     setStep('select');
     setDeployType('feed');
     if (isRelaySourceChain) {
