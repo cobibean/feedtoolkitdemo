@@ -161,11 +161,11 @@ function FeedCard({ feed, chainId, onUpdateClick, isUpdating, normalizedFeed, re
 
   return (
     <Card className="hover:border-brand-500/50 transition-colors overflow-hidden">
-      <CardHeader className="pb-3">
-        <div className="flex items-start justify-between gap-2">
+      <CardHeader className="pb-4">
+        <div className="flex items-start justify-between gap-3">
           <div className="min-w-0 flex-1">
             <CardTitle className="text-lg truncate">{feed.alias}</CardTitle>
-            <div className="flex items-center gap-2 mt-1 flex-wrap">
+            <div className="mt-2 flex flex-wrap items-center gap-2">
               <Badge variant="outline" className="font-mono text-xs">
                 {feed.token0.symbol}/{feed.token1.symbol}
               </Badge>
@@ -175,40 +175,47 @@ function FeedCard({ feed, chainId, onUpdateClick, isUpdating, normalizedFeed, re
                 method={feedMethod}
                 originChain={sourceChain.name}
               />
-              {/* Source chain indicator for external feeds */}
-              {!isFlareSource && (
-                <div className="flex items-center gap-1 text-xs text-muted-foreground">
-                  <ChainBadge chainId={sourceChain.id} className="text-[10px] px-1.5" />
-                  <ArrowRight className="w-3 h-3" />
-                  <span>Flare</span>
-                </div>
-              )}
-              {/* Relay trust indicator */}
-              {isRelayFeed && (
-                <Badge variant="outline" className="text-[10px] bg-yellow-100 text-yellow-800 dark:bg-yellow-900 dark:text-yellow-200">
-                  Relay
-                </Badge>
-              )}
             </div>
+            {/* Source chain indicator for external feeds */}
+            {!isFlareSource && (
+              <div className="mt-2 flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
+                <div className="flex items-center gap-2">
+                  <ChainBadge chainId={sourceChain.id} className="text-[10px] px-1.5" />
+                  <ArrowRight className="w-3 h-3 opacity-60" />
+                  <ChainBadge chainId={14} chainName="Flare" className="text-[10px] px-1.5" />
+                </div>
+                {/* Relay trust indicator */}
+                {isRelayFeed && (
+                  <Badge
+                    variant="outline"
+                    className="text-[10px] bg-yellow-100 text-yellow-800 dark:bg-yellow-900 dark:text-yellow-200"
+                  >
+                    Relay
+                  </Badge>
+                )}
+              </div>
+            )}
           </div>
-          <div className="flex items-center gap-2 shrink-0">
-            <div className={`w-2 h-2 rounded-full ${status.color}`} />
-            <span className="text-sm text-muted-foreground flex items-center gap-1">
+          <div className="shrink-0">
+            <Badge variant="outline" className="gap-1.5">
+              <span className={`w-2 h-2 rounded-full ${status.color}`} />
               <StatusIcon className="w-3 h-3" />
-              {status.text}
-            </span>
+              <span className="text-sm text-muted-foreground">{status.text}</span>
+            </Badge>
           </div>
         </div>
       </CardHeader>
       <CardContent className="space-y-4">
         {/* Price Display */}
-        <div className="p-4 rounded-lg bg-secondary/50">
-          <div className="text-sm text-muted-foreground mb-1">Current Price</div>
-          <div className="text-2xl font-display truncate">
-            {isLoading ? '...' : formatPrice(latestValue)}
+        <div className="p-4 rounded-lg bg-secondary/40 border border-border/50">
+          <div className="flex items-center justify-between gap-3">
+            <div className="text-sm text-muted-foreground">Current Price</div>
+            <div className="text-xs text-muted-foreground">
+              Last update: {formatTimeAgo(lastUpdateTimestamp)}
+            </div>
           </div>
-          <div className="text-xs text-muted-foreground mt-1">
-            Last update: {formatTimeAgo(lastUpdateTimestamp)}
+          <div className="mt-2 text-3xl font-display tracking-tight truncate">
+            {isLoading ? '...' : formatPrice(latestValue)}
           </div>
         </div>
 
@@ -216,11 +223,13 @@ function FeedCard({ feed, chainId, onUpdateClick, isUpdating, normalizedFeed, re
         <div className="grid grid-cols-2 gap-4">
           <div className="min-w-0">
             <div className="text-xs text-muted-foreground">Updates</div>
-            <div className="font-semibold">{updateCount}</div>
+            <div className="mt-1 text-lg font-semibold leading-none">{updateCount}</div>
           </div>
           <div className="min-w-0">
             <div className="text-xs text-muted-foreground">Source</div>
-            <div className="font-semibold text-sm">{sourceChain.name}</div>
+            <div className="mt-1">
+              <ChainBadge chainId={sourceChain.id} chainName={sourceChain.name} />
+            </div>
           </div>
         </div>
 
