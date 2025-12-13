@@ -132,7 +132,7 @@ export default function DeployPage() {
       toast.info(`Switching to ${targetName}...`, { id: toastId });
       try {
         await switchChainAsync({ chainId: sourceChainId });
-        await waitForChainId(publicClient, sourceChainId, { chainName: targetName });
+        await waitForChainId(wagmiConfig, sourceChainId, { chainName: targetName });
         if (!active) return;
         toast.success(`Switched to ${targetName}`, { id: toastId });
       } catch (error) {
@@ -223,7 +223,7 @@ export default function DeployPage() {
         toast.info(`Switching to ${sourceChain?.name}...`);
         try {
           await switchChainAsync({ chainId: sourceChainId });
-          await waitForChainId(publicClient, sourceChainId, {
+          await waitForChainId(wagmiConfig, sourceChainId, {
             chainName: sourceChain?.name || `chain ${sourceChainId}`,
           });
         } catch (switchError) {
@@ -297,7 +297,7 @@ export default function DeployPage() {
         toast.info('Switching back to Flare for feed deployment...');
         try {
           await switchChainAsync({ chainId: 14 });
-          await waitForChainId(publicClient, 14, { chainName: 'Flare' });
+          await waitForChainId(wagmiConfig, 14, { chainName: 'Flare' });
           toast.success('Wallet switched to Flare');
         } catch (switchError) {
           // Non-fatal: user can still manually switch before deploying feed
@@ -334,7 +334,7 @@ export default function DeployPage() {
         toast.info('Switching to Flare...');
         try {
           await switchChainAsync({ chainId: 14 });
-          await waitForChainId(publicClient, 14, { chainName: 'Flare' });
+          await waitForChainId(wagmiConfig, 14, { chainName: 'Flare' });
         } catch (switchError) {
           if ((switchError as Error).message?.includes('rejected')) {
             throw new Error('Network switch rejected');
@@ -403,7 +403,7 @@ export default function DeployPage() {
       toast.info('Switching to Flare for feed deployment...');
       try {
         await switchChainAsync({ chainId: 14 });
-        await waitForChainId(publicClient, 14, { chainName: 'Flare' });
+        await waitForChainId(wagmiConfig, 14, { chainName: 'Flare' });
         toast.success('Wallet switched to Flare');
       } catch (switchError) {
         // Non-fatal but warn user
@@ -449,7 +449,7 @@ export default function DeployPage() {
         toast.info('Switching to Flare for feed deployment...');
         try {
           await switchChainAsync({ chainId: 14 });
-          await waitForChainId(publicClient, 14, { chainName: 'Flare' });
+          await waitForChainId(wagmiConfig, 14, { chainName: 'Flare' });
         } catch (switchError) {
           if ((switchError as Error).message?.includes('rejected')) {
             throw new Error('Network switch to Flare rejected');

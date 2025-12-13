@@ -378,7 +378,7 @@ export function useFeedUpdater(): UseFeedUpdaterResult {
         if (chainId !== originChainId) {
           updateProgress('switching-to-source', `Switching to ${chainName} for native update...`);
           await switchChainAsync({ chainId: originChainId });
-          await waitForChainId(publicClient, originChainId, { chainName });
+          await waitForChainId(wagmiConfig, originChainId, { chainName });
         }
 
       const nativeWalletClient = await getWalletClient(wagmiConfig, { chainId: originChainId });
@@ -563,7 +563,7 @@ export function useFeedUpdater(): UseFeedUpdaterResult {
           updateProgress('switching-to-flare', 'Switching to Flare for relay...');
           try {
             await switchChainAsync({ chainId: 14 });
-            await waitForChainId(publicClient, 14, { chainName: 'Flare' });
+            await waitForChainId(wagmiConfig, 14, { chainName: 'Flare' });
           } catch (switchError) {
             if ((switchError as Error).message?.includes('rejected')) {
               throw new Error('Network switch to Flare rejected.');
@@ -714,7 +714,7 @@ export function useFeedUpdater(): UseFeedUpdaterResult {
             updateProgress('switching-to-flare', 'Switching to Flare for attestation...');
             try {
               await switchChainAsync({ chainId: 14 });
-              await waitForChainId(publicClient, 14, { chainName: 'Flare' });
+              await waitForChainId(wagmiConfig, 14, { chainName: 'Flare' });
             } catch (switchError) {
               if ((switchError as Error).message?.includes('rejected')) {
                 throw new Error('Network switch to Flare rejected. Please switch manually and try again.');
@@ -732,7 +732,7 @@ export function useFeedUpdater(): UseFeedUpdaterResult {
           try {
             await switchChainAsync({ chainId: sourceChainId });
             currentChainId = sourceChainId;
-            await waitForChainId(publicClient, sourceChainId, { chainName: sourceChain?.name || `chain ${sourceChainId}` });
+            await waitForChainId(wagmiConfig, sourceChainId, { chainName: sourceChain?.name || `chain ${sourceChainId}` });
           } catch (switchError) {
             if ((switchError as Error).message?.includes('rejected')) {
               throw new Error('Network switch rejected. Please switch manually and try again.');
@@ -839,7 +839,7 @@ export function useFeedUpdater(): UseFeedUpdaterResult {
           
           try {
             await switchChainAsync({ chainId: 14 });
-            await waitForChainId(publicClient, 14, { chainName: 'Flare' });
+            await waitForChainId(wagmiConfig, 14, { chainName: 'Flare' });
           } catch (switchError) {
             if ((switchError as Error).message?.includes('rejected')) {
               throw new Error('Network switch to Flare rejected. Please switch manually and try again.');

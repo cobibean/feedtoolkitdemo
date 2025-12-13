@@ -1,6 +1,7 @@
 import { clsx, type ClassValue } from "clsx"
 import { twMerge } from "tailwind-merge"
-import type { PublicClient } from "viem"
+import type { Config } from "wagmi"
+import { getAccount } from "wagmi/actions"
 
 export function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs))
@@ -12,20 +13,23 @@ export interface WaitForChainOptions {
   chainName?: string
 }
 
+/**
+ * Polls the wagmi account state until the wallet's chain matches the target.
+ * This checks the actual wallet chain, not the RPC client's chain.
+ */
 export async function waitForChainId(
-  publicClient: PublicClient | undefined,
+  wagmiConfig: Config,
   targetChainId: number,
   options: WaitForChainOptions = {}
 ) {
-  if (!publicClient) return
   const { timeoutMs = 15_000, intervalMs = 500, chainName } = options
   const start = Date.now()
   const targetName = chainName || `chain ${targetChainId}`
 
   while (Date.now() - start < timeoutMs) {
     try {
-      const current = await publicClient.getChainId()
-      if (current === targetChainId) {
+      const account = getAccount(wagmiConfig)
+      if (account.chainId === targetChainId) {
         return
       }
     } catch {
