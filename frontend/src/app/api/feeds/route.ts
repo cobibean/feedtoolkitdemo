@@ -277,12 +277,16 @@ export async function GET(req: NextRequest) {
   try {
     const mode = getStorageMode(req);
     const includeArchived = getIncludeArchived(req);
+    
+    console.log(`[Feeds API] GET request - mode: ${mode}, includeArchived: ${includeArchived}`);
 
     if (mode === 'database') {
       if (!supabase) {
-        return NextResponse.json({ error: 'Database not configured' }, { status: 400 });
+        console.error('[Feeds API] Database mode requested but Supabase not configured. Check NEXT_PUBLIC_SUPABASE_URL and NEXT_PUBLIC_SUPABASE_ANON_KEY env vars.');
+        return NextResponse.json({ error: 'Database not configured. Check Supabase environment variables.' }, { status: 400 });
       }
       const data = await readSupabaseData(includeArchived);
+      console.log(`[Feeds API] Supabase returned ${data.feeds.length} feeds, ${data.recorders.length} recorders, ${data.relays?.length || 0} relays`);
       return NextResponse.json(data);
     }
 

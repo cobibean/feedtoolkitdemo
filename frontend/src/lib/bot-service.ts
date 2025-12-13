@@ -205,6 +205,8 @@ export class BotService {
 
     this.setStatus('starting');
     this.log('info', '🤖 Starting Custom Feeds Bot...');
+    this.log('info', `📦 Storage mode: ${this.config.storageMode || 'not set (defaulting to local)'}`);
+    this.log('info', `🌐 API base URL: ${getApiBaseUrl()}`);
 
     try {
       const key = privateKey || this.config.privateKey || process.env.DEPLOYER_PRIVATE_KEY;
@@ -370,11 +372,21 @@ export class BotService {
       const baseUrl = getApiBaseUrl();
       // Pass storageMode as query param so API knows which backend to use
       const storageModeParam = this.config.storageMode ? `?storageMode=${this.config.storageMode}` : '';
-      const response = await fetch(`${baseUrl}/api/feeds${storageModeParam}`);
-      if (response.ok) {
-        const data: FeedsData = await response.json();
-        const allFeeds = data.feeds || [];
-        this.relays = data.relays || [];
+      const url = `${baseUrl}/api/feeds${storageModeParam}`;
+      this.log('info', `📡 Fetching feeds from: ${url} (storageMode: ${this.config.storageMode || 'not set'})`);
+      
+      const response = await fetch(url);
+      if (!response.ok) {
+        const errorText = await response.text().catch(() => 'unknown');
+        this.log('error', `Failed to fetch feeds: ${response.status} ${response.statusText} - ${errorText}`);
+        return;
+      }
+      
+      const data: FeedsData = await response.json();
+      const allFeeds = data.feeds || [];
+      this.relays = data.relays || [];
+      
+      this.log('info', `📊 API returned ${allFeeds.length} feed(s), ${this.relays.length} relay(s)`);
 
         const selected = this.config.selectedFeedIds;
         if (Array.isArray(selected) && selected.length > 0) {
