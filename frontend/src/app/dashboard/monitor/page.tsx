@@ -6,6 +6,17 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Progress } from '@/components/ui/progress';
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogTrigger,
+} from '@/components/ui/alert-dialog';
 import { useFeeds } from '@/context/feeds-context';
 import { useChainId, useReadContracts, useAccount } from 'wagmi';
 import { CUSTOM_FEED_ABI } from '@/lib/contracts';
@@ -25,7 +36,9 @@ import {
   X,
   Loader2,
   ArrowRight,
-  Zap
+  Zap,
+  Archive,
+  Undo2
 } from 'lucide-react';
 import { toast } from 'sonner';
 import Link from 'next/link';
@@ -93,6 +106,8 @@ interface FeedCardProps {
   feed: StoredFeed;
   chainId: number;
   onUpdateClick: () => void;
+  onArchiveClick: () => void;
+  onRestoreClick: () => void;
   isUpdating: boolean;
   normalizedFeed: StoredFeed & { sourceChain: SourceChain; sourcePoolAddress: `0x${string}` };
   refreshKey: number;
@@ -111,6 +126,8 @@ function FeedCard({
   feed,
   chainId,
   onUpdateClick,
+  onArchiveClick,
+  onRestoreClick,
   isUpdating,
   normalizedFeed,
   refreshKey,
@@ -186,6 +203,7 @@ function FeedCard({
 
   const status = statusConfig[freshness];
   const StatusIcon = status.icon;
+  const isArchived = Boolean(feed.archivedAt);
 
   // Ensure cards update immediately after a successful update flow
   useEffect(() => {
@@ -200,7 +218,11 @@ function FeedCard({
   };
 
   return (
-    <Card className="hover:border-brand-500/50 transition-colors overflow-hidden">
+    <Card
+      className={`hover:border-brand-500/50 transition-colors overflow-hidden ${
+        isArchived ? 'opacity-60' : ''
+      }`}
+    >
       <CardHeader className="pb-4">
         <div className="flex items-start justify-between gap-3">
           <div className="min-w-0 flex-1">
@@ -209,6 +231,11 @@ function FeedCard({
               <Badge variant="outline" className="font-mono text-xs">
                 {feed.token0.symbol}/{feed.token1.symbol}
               </Badge>
+              {isArchived && (
+                <Badge variant="secondary" className="text-xs">
+                  Archived
+                </Badge>
+              )}
               {/* Provenance Badge - key for reviewer clarity */}
               <ProvenanceBadge 
                 sourceKind={feedSourceKind}
@@ -278,12 +305,17 @@ function FeedCard({
         <Button 
           className="w-full bg-brand-500 hover:bg-brand-600"
           onClick={onUpdateClick}
-          disabled={isUpdating}
+          disabled={isUpdating || isArchived}
         >
           {isUpdating ? (
             <>
               <Loader2 className="w-4 h-4 mr-2 animate-spin" />
               {feedSourceKind === 'FLARE_NATIVE' ? 'Updating...' : 'Updating...'}
+            </>
+          ) : isArchived ? (
+            <>
+              <Archive className="w-4 h-4 mr-2" />
+              Archived
             </>
           ) : (
             <>
@@ -320,6 +352,48 @@ function FeedCard({
             <Button variant="ghost" size="sm" onClick={() => refetch()}>
               <RefreshCw className="w-4 h-4" />
             </Button>
+            {isArchived ? (
+              <AlertDialog>
+                <AlertDialogTrigger asChild>
+                  <Button variant="ghost" size="sm" title="Restore feed">
+                    <Undo2 className="w-4 h-4" />
+                  </Button>
+                </AlertDialogTrigger>
+                <AlertDialogContent>
+                  <AlertDialogHeader>
+                    <AlertDialogTitle>Restore this feed?</AlertDialogTitle>
+                    <AlertDialogDescription>
+                      This will move the feed back into your active list.
+                    </AlertDialogDescription>
+                  </AlertDialogHeader>
+                  <AlertDialogFooter>
+                    <AlertDialogCancel>Cancel</AlertDialogCancel>
+                    <AlertDialogAction onClick={onRestoreClick}>Restore</AlertDialogAction>
+                  </AlertDialogFooter>
+                </AlertDialogContent>
+              </AlertDialog>
+            ) : (
+              <AlertDialog>
+                <AlertDialogTrigger asChild>
+                  <Button variant="ghost" size="sm" title="Archive feed">
+                    <Archive className="w-4 h-4" />
+                  </Button>
+                </AlertDialogTrigger>
+                <AlertDialogContent>
+                  <AlertDialogHeader>
+                    <AlertDialogTitle>Archive this feed?</AlertDialogTitle>
+                    <AlertDialogDescription>
+                      The feed contract stays on-chain forever. Archiving only hides it from your UI. It will be retained
+                      for 30 days, then deleted from storage.
+                    </AlertDialogDescription>
+                  </AlertDialogHeader>
+                  <AlertDialogFooter>
+                    <AlertDialogCancel>Cancel</AlertDialogCancel>
+                    <AlertDialogAction onClick={onArchiveClick}>Archive</AlertDialogAction>
+                  </AlertDialogFooter>
+                </AlertDialogContent>
+              </AlertDialog>
+            )}
           </div>
           <a
             href={getExplorerUrl(14, 'address', feed.customFeedAddress)}
@@ -691,7 +765,17 @@ function UpdateProgressModal({
 }
 
 export default function MonitorPage() {
-  const { feeds, recorders, isLoading, refresh, getNormalizedFeed } = useFeeds();
+  const {
+    feeds,
+    recorders,
+    isLoading,
+    refresh,
+    getNormalizedFeed,
+    includeArchived,
+    setIncludeArchived,
+    archiveFeed,
+    restoreFeed,
+  } = useFeeds();
   const chainId = useChainId();
   const { isConnected } = useAccount();
   const { updateFeed, progress, isUpdating, cancel } = useFeedUpdater();
@@ -715,6 +799,7 @@ export default function MonitorPage() {
 
   // Get all feeds (no longer filtered by network since feeds are always on Flare)
   const allFeeds = feeds;
+  const visibleFeeds = includeArchived ? allFeeds : allFeeds.filter(f => !f.archivedAt);
   
   // Get the currently updating feed for source chain name display
   const updatingFeed = updatingFeedId ? allFeeds.find(f => f.id === updatingFeedId) : null;
@@ -766,30 +851,38 @@ export default function MonitorPage() {
       );
       // Always refetch on-chain state after the update flow completes.
       // (updateFeed updates contracts, not feeds.json)
-      setRefreshKey(Date.now());
+      setRefreshKey((k) => k + 1);
     } catch (error) {
       console.error('Update failed:', error);
     }
   };
 
-  // Also refetch immediately when we hit a success state (even before the modal is closed).
-  useEffect(() => {
-    if (progress.step === 'success' || progress.step === 'native-success') {
-      setRefreshKey(Date.now());
+  const handleArchive = async (feedId: string) => {
+    try {
+      await archiveFeed(feedId);
+      toast.success('Feed archived');
+    } catch (e) {
+      toast.error((e as Error).message || 'Failed to archive feed');
     }
-  }, [progress.step]);
+  };
 
-  // For FLARE_NATIVE direct reads, cache the last read so the card can reflect it.
-  useEffect(() => {
-    if (progress.step !== 'native-success') return;
-    if (!updatingFeedId) return;
-    if (!progress.nativeResult) return;
-
-    setNativeReadsByFeedId(prev => ({ ...prev, [updatingFeedId]: progress.nativeResult! }));
-    setNativeReadCountByFeedId(prev => ({ ...prev, [updatingFeedId]: (prev[updatingFeedId] ?? 0) + 1 }));
-  }, [progress.step, progress.nativeResult, updatingFeedId]);
+  const handleRestore = async (feedId: string) => {
+    try {
+      await restoreFeed(feedId);
+      toast.success('Feed restored');
+    } catch (e) {
+      toast.error((e as Error).message || 'Failed to restore feed');
+    }
+  };
 
   const handleCloseModal = () => {
+    // For FLARE_NATIVE direct reads, cache the last read so the card can reflect it.
+    // (Avoids using an effect just to update local state.)
+    if (progress.step === 'native-success' && updatingFeedId && progress.nativeResult) {
+      setNativeReadsByFeedId(prev => ({ ...prev, [updatingFeedId]: progress.nativeResult! }));
+      setNativeReadCountByFeedId(prev => ({ ...prev, [updatingFeedId]: (prev[updatingFeedId] ?? 0) + 1 }));
+    }
+
     if (isUpdating) {
       cancel();
     }
@@ -835,16 +928,24 @@ export default function MonitorPage() {
         <div className="flex items-center justify-between">
           <div>
             <h2 className="text-lg font-semibold">
-              {allFeeds.length} Feed{allFeeds.length !== 1 ? 's' : ''} on Flare
+              {visibleFeeds.length} Feed{visibleFeeds.length !== 1 ? 's' : ''} on Flare
             </h2>
             <p className="text-sm text-muted-foreground">
               Feeds can source prices from Flare, Ethereum, and 17 additional EVM chains.
             </p>
           </div>
-          <Button variant="outline" onClick={refresh}>
-            <RefreshCw className="w-4 h-4 mr-2" />
-            Refresh
-          </Button>
+          <div className="flex items-center gap-2">
+            <Button
+              variant={includeArchived ? 'secondary' : 'outline'}
+              onClick={() => setIncludeArchived(!includeArchived)}
+            >
+              {includeArchived ? 'Hide Archived' : 'Show Archived'}
+            </Button>
+            <Button variant="outline" onClick={refresh}>
+              <RefreshCw className="w-4 h-4 mr-2" />
+              Refresh
+            </Button>
+          </div>
         </div>
 
         {/* Feeds Grid */}
@@ -852,9 +953,9 @@ export default function MonitorPage() {
           <div className="text-center py-12 text-muted-foreground">
             Loading feeds...
           </div>
-        ) : allFeeds.length > 0 ? (
+        ) : visibleFeeds.length > 0 ? (
           <div className="grid md:grid-cols-2 xl:grid-cols-3 gap-6">
-            {allFeeds.map((feed) => {
+            {visibleFeeds.map((feed) => {
               const normalized = getNormalizedFeed(feed);
               return (
                 <FeedCard 
@@ -863,6 +964,8 @@ export default function MonitorPage() {
                   normalizedFeed={normalized}
                   chainId={chainId}
                   onUpdateClick={() => handleUpdateFeed(feed)}
+                  onArchiveClick={() => handleArchive(feed.id)}
+                  onRestoreClick={() => handleRestore(feed.id)}
                   isUpdating={isUpdating && updatingFeedId === feed.id}
                   refreshKey={refreshKey}
                   nativeRead={nativeReadsByFeedId[feed.id]}

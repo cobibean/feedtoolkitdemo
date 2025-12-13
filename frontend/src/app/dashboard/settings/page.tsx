@@ -7,7 +7,9 @@ import { Button } from '@/components/ui/button';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Label } from '@/components/ui/label';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { useFeeds } from '@/context/feeds-context';
+import { useStorageMode, type StorageMode } from '@/context/storage-mode-context';
 import { useChainId } from 'wagmi';
 import { toast } from 'sonner';
 import { 
@@ -18,7 +20,9 @@ import {
   FileCode,
   AlertCircle,
   Bot,
-  ExternalLink
+  ExternalLink,
+  Database,
+  HardDrive
 } from 'lucide-react';
 import Link from 'next/link';
 import type { NetworkId, StoredFeed, StoredRecorder } from '@/lib/types';
@@ -118,11 +122,12 @@ function downloadEnvFile(content: string, filename: string = 'bot.env'): void {
 }
 
 export default function SettingsPage() {
-  const { feeds, recorders } = useFeeds();
+  const { feeds, recorders, refresh } = useFeeds();
+  const { storageMode, setStorageMode } = useStorageMode();
   const chainId = useChainId();
 
   // All feeds (no network filter since feeds are always on Flare)
-  const allFeeds = feeds;
+  const allFeeds = feeds.filter(f => !f.archivedAt);
 
   const [selectedFeeds, setSelectedFeeds] = useState<Set<string>>(new Set());
 
@@ -165,6 +170,22 @@ export default function SettingsPage() {
     toast.success('Configuration file downloaded');
   };
 
+  const dbConfigured = Boolean(
+    process.env.NEXT_PUBLIC_SUPABASE_URL && process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY
+  );
+
+  const handleStorageModeChange = async (mode: StorageMode) => {
+    if (mode === storageMode) return;
+    if (mode === 'database' && !dbConfigured) {
+      toast.error('Supabase is not configured. Set NEXT_PUBLIC_SUPABASE_URL and NEXT_PUBLIC_SUPABASE_ANON_KEY.');
+      return;
+    }
+
+    setStorageMode(mode);
+    toast.success(`Storage mode set to ${mode === 'database' ? 'Database' : 'Local JSON'}`);
+    await refresh();
+  };
+
   return (
     <div className="min-h-screen">
       <Header 
@@ -182,6 +203,10 @@ export default function SettingsPage() {
             <TabsTrigger value="frontend-bot">
               <Bot className="w-4 h-4 mr-2" />
               Frontend Bot
+            </TabsTrigger>
+            <TabsTrigger value="storage">
+              <Database className="w-4 h-4 mr-2" />
+              Storage
             </TabsTrigger>
             <TabsTrigger value="about">
               <Settings className="w-4 h-4 mr-2" />
@@ -376,6 +401,78 @@ DEPLOYER_PRIVATE_KEY=0x_YOUR_PRIVATE_KEY
 # Optional: For hosted deployments
 NEXT_PUBLIC_APP_URL=https://your-domain.com`}
                 </pre>
+              </CardContent>
+            </Card>
+          </TabsContent>
+
+          <TabsContent value="storage" className="space-y-6">
+            <Card>
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2">
+                  <Database className="w-5 h-5 text-brand-500" />
+                  Storage Mode
+                </CardTitle>
+                <CardDescription>
+                  Choose where deployed feeds are stored and loaded from. This setting is saved in a cookie.
+                </CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-6">
+                <div className="space-y-2">
+                  <Label>Current mode</Label>
+                  <div className="flex items-center gap-3">
+                    <Select value={storageMode} onValueChange={(v) => handleStorageModeChange(v as StorageMode)}>
+                      <SelectTrigger className="w-[260px]">
+                        <SelectValue placeholder="Select storage mode" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="local">
+                          <span className="flex items-center gap-2">
+                            <HardDrive className="w-4 h-4" />
+                            Local JSON
+                          </span>
+                        </SelectItem>
+                        <SelectItem value="database" disabled={!dbConfigured}>
+                          <span className="flex items-center gap-2">
+                            <Database className="w-4 h-4" />
+                            Database (Supabase)
+                          </span>
+                        </SelectItem>
+                      </SelectContent>
+                    </Select>
+                    {!dbConfigured && (
+                      <span className="text-xs text-muted-foreground">
+                        Database disabled (missing env vars)
+                      </span>
+                    )}
+                  </div>
+                  <p className="text-sm text-muted-foreground">
+                    Switching storage mode will reload feeds from the selected backend.
+                  </p>
+                </div>
+
+                <div className="grid md:grid-cols-2 gap-4">
+                  <div className="p-4 rounded-lg border bg-secondary/30">
+                    <div className="flex items-center gap-2 font-semibold">
+                      <HardDrive className="w-4 h-4 text-muted-foreground" />
+                      Local JSON
+                    </div>
+                    <p className="mt-2 text-sm text-muted-foreground">
+                      Stores feeds in <code className="px-1 py-0.5 rounded bg-secondary">frontend/data/feeds.json</code>.
+                      Best for self-hosted demos and local dev.
+                    </p>
+                  </div>
+                  <div className="p-4 rounded-lg border bg-secondary/30">
+                    <div className="flex items-center gap-2 font-semibold">
+                      <Database className="w-4 h-4 text-muted-foreground" />
+                      Database (Supabase)
+                    </div>
+                    <p className="mt-2 text-sm text-muted-foreground">
+                      Stores feeds in Supabase for shared/hosted deployments. Requires
+                      <code className="px-1 py-0.5 rounded bg-secondary ml-1">NEXT_PUBLIC_SUPABASE_URL</code> and
+                      <code className="px-1 py-0.5 rounded bg-secondary ml-1">NEXT_PUBLIC_SUPABASE_ANON_KEY</code>.
+                    </p>
+                  </div>
+                </div>
               </CardContent>
             </Card>
           </TabsContent>

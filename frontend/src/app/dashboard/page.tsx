@@ -17,8 +17,8 @@ export default function DashboardPage() {
     ? `${walletChain.name} ${walletChain.testnet ? 'Testnet' : 'Mainnet'}`
     : `Unsupported (Chain ID: ${chainId})`;
 
-  const networkFeeds = feeds.filter(f => f.network === 'flare');
-  const networkRecorders = recorders.filter(r => r.network === 'flare');
+  const networkFeeds = feeds.filter(f => f.network === 'flare' && !f.archivedAt);
+  const networkRecorders = recorders.filter(r => r.network === 'flare' && !r.archivedAt);
 
   return (
     <div className="min-h-screen">

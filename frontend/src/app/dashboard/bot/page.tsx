@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useMemo, useState } from 'react';
 import { Header } from '@/components/layout/header';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -95,29 +95,25 @@ export default function BotPage() {
   } = useBot();
   
   const { feeds } = useFeeds();
+  const activeFeeds = useMemo(() => feeds.filter(f => !f.archivedAt), [feeds]);
   const [showPrivateKeyInput, setShowPrivateKeyInput] = useState(false);
   const [privateKey, setPrivateKey] = useState('');
   const [isStarting, setIsStarting] = useState(false);
   const [isStopping, setIsStopping] = useState(false);
-  const [selectedFeedIds, setSelectedFeedIds] = useState<string[]>([]);
-  const didInitSelectionRef = useRef(false);
+  const [selectedFeedIds, setSelectedFeedIds] = useState<string[] | null>(null);
   const [isTerminalFullscreenOpen, setIsTerminalFullscreenOpen] = useState(false);
 
-  // Initialize selection from server config (or default to none).
-  // NOTE: We only do this once to avoid clobbering user selections during refreshes.
-  useEffect(() => {
-    if (didInitSelectionRef.current) return;
-
+  const configuredFeedIds = useMemo(() => {
     const configured = Array.isArray(config?.selectedFeedIds) ? config!.selectedFeedIds : [];
-    const valid = configured.filter((id) => feeds.some((f) => f.id === id));
-    setSelectedFeedIds(valid);
-    didInitSelectionRef.current = true;
-  }, [config, feeds]);
+    return configured.filter((id) => activeFeeds.some((f) => f.id === id));
+  }, [config, activeFeeds]);
+
+  const effectiveSelectedFeedIds = selectedFeedIds ?? configuredFeedIds;
 
   const selectedFeeds = useMemo(() => {
-    const byId = new Map(feeds.map(f => [f.id, f]));
-    return selectedFeedIds.map(id => byId.get(id)).filter(Boolean);
-  }, [feeds, selectedFeedIds]);
+    const byId = new Map(activeFeeds.map(f => [f.id, f]));
+    return effectiveSelectedFeedIds.map(id => byId.get(id)).filter(Boolean);
+  }, [activeFeeds, effectiveSelectedFeedIds]);
 
   const hasEthSelected = useMemo(() => {
     return selectedFeeds.some(f => (f?.sourceChain?.id ?? 14) === 1);
@@ -128,7 +124,7 @@ export default function BotPage() {
   }, [selectedFeeds]);
 
   const handleStart = async () => {
-    if (selectedFeedIds.length === 0) {
+    if (effectiveSelectedFeedIds.length === 0) {
       toast.error('Select at least one feed to run');
       return;
     }
@@ -140,7 +136,7 @@ export default function BotPage() {
     setIsStarting(true);
     const success = await start({
       privateKey: privateKey || undefined,
-      feedIds: selectedFeedIds,
+      feedIds: effectiveSelectedFeedIds,
     });
     setIsStarting(false);
     
@@ -177,7 +173,7 @@ export default function BotPage() {
   const StatusIcon = currentStatus.icon;
 
   const startDisabledReason =
-    selectedFeedIds.length === 0
+    effectiveSelectedFeedIds.length === 0
       ? 'Select at least one feed above to enable Start.'
       : hasEthSelected && hasNonEthSelected
         ? 'ETH mainnet feeds must run solo. Deselect non-ETH feeds.'
@@ -229,8 +225,8 @@ export default function BotPage() {
                 type="button"
                 variant="outline"
                 size="sm"
-                onClick={() => setSelectedFeedIds(feeds.map(f => f.id))}
-                disabled={feeds.length === 0}
+                onClick={() => setSelectedFeedIds(activeFeeds.map(f => f.id))}
+                disabled={activeFeeds.length === 0}
               >
                 Select all
               </Button>
@@ -239,16 +235,16 @@ export default function BotPage() {
                 variant="outline"
                 size="sm"
                 onClick={() => setSelectedFeedIds([])}
-                disabled={feeds.length === 0}
+                disabled={activeFeeds.length === 0}
               >
                 Select none
               </Button>
               <div className="text-sm text-muted-foreground flex items-center">
-                Selected: {selectedFeedIds.length}/{feeds.length}
+                Selected: {effectiveSelectedFeedIds.length}/{activeFeeds.length}
               </div>
             </div>
 
-            {feeds.length === 0 ? (
+            {activeFeeds.length === 0 ? (
               <Alert>
                 <AlertTriangle className="w-4 h-4" />
                 <AlertDescription>
@@ -258,10 +254,10 @@ export default function BotPage() {
             ) : (
               <div className="space-y-3">
                 <div className="grid md:grid-cols-2 gap-3">
-                  {feeds.map((feed) => {
+                  {activeFeeds.map((feed) => {
                     const sourceChainId = feed.sourceChain?.id ?? 14;
                     const isEth = sourceChainId === 1;
-                    const checked = selectedFeedIds.includes(feed.id);
+                    const checked = effectiveSelectedFeedIds.includes(feed.id);
                     const disabled = !checked && hasEthSelected && !isEth;
 
                     return (
@@ -277,14 +273,15 @@ export default function BotPage() {
                           onCheckedChange={(next) => {
                             const isChecked = next === true;
                             setSelectedFeedIds((prev) => {
+                              const current = prev ?? configuredFeedIds;
                               if (isChecked) {
                                 // Selecting ETH forces ETH-only selection
                                 if (isEth) return [feed.id];
                                 // If ETH already selected, block selecting non-ETH (also covered by disabled)
-                                if (hasEthSelected) return prev;
-                                return Array.from(new Set([...prev, feed.id]));
+                                if (hasEthSelected) return current;
+                                return Array.from(new Set([...current, feed.id]));
                               }
-                              return prev.filter((id) => id !== feed.id);
+                              return current.filter((id) => id !== feed.id);
                             });
                           }}
                         />
@@ -447,7 +444,7 @@ export default function BotPage() {
                 </div>
                 <div className="p-3 rounded-lg bg-secondary/50">
                   <div className="text-2xl font-bold">
-                    {feeds.length}
+                    {activeFeeds.length}
                   </div>
                   <div className="text-xs text-muted-foreground">Configured Feeds</div>
                 </div>
@@ -535,7 +532,7 @@ export default function BotPage() {
         </Dialog>
 
         {/* Feed Status Grid */}
-        {feeds.length > 0 && (
+        {activeFeeds.length > 0 && (
           <Card>
             <CardHeader>
               <CardTitle>Feed Status</CardTitle>
@@ -545,7 +542,7 @@ export default function BotPage() {
             </CardHeader>
             <CardContent>
               <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-4">
-                {feeds.map((feed) => {
+                {activeFeeds.map((feed) => {
                   const feedStats = stats?.feedStats[feed.id];
                   return (
                     <div 

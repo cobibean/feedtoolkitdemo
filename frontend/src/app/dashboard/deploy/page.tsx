@@ -64,15 +64,18 @@ export default function DeployPage() {
   const isRelaySourceChain = isRelayChain(sourceChainId);
   const isNativeSourceChain = sourceChainId === 14 || sourceChainId === 114;
 
+  const activeRecorders = recorders.filter(r => !r.archivedAt);
+  const activeRelays = (relays || []).filter(r => !r.archivedAt);
+
   // Filter recorders by selected source chain (only for direct chains)
-  const chainRecorders = recorders.filter(r => {
+  const chainRecorders = activeRecorders.filter(r => {
     // Legacy recorders without chainId are assumed to be on Flare
     const recorderChainId = r.chainId ?? 14;
     return recorderChainId === sourceChainId;
   });
 
   // Get available relays (for relay chains)
-  const availableRelays = relays || [];
+  const availableRelays = activeRelays;
 
   // Deploy type selection
   const [deployType, setDeployType] = useState<'recorder' | 'feed' | null>(null);

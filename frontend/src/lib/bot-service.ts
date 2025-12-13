@@ -8,7 +8,18 @@
  * Supports both direct chains (Flare, Ethereum) and relay chains (Arbitrum, Base, etc.)
  */
 
-import { createPublicClient, createWalletClient, http, parseAbi, formatEther, type PublicClient, type WalletClient, type Chain } from 'viem';
+import {
+  createPublicClient,
+  createWalletClient,
+  http,
+  parseAbi,
+  formatEther,
+  decodeAbiParameters,
+  parseAbiParameters,
+  type PublicClient,
+  type WalletClient,
+  type Chain,
+} from 'viem';
 import { privateKeyToAccount } from 'viem/accounts';
 import { flare } from 'viem/chains';
 import { SUPPORTED_CHAINS, isRelayChain, getChainById, type SupportedChain } from './chains';
@@ -113,6 +124,12 @@ const CUSTOM_FEED_ABI = parseAbi([
   'function updateCount() view returns (uint256)',
   'function acceptingUpdates() view returns (bool)',
 ]);
+
+const RESPONSE_TUPLE_TYPE =
+  `(bytes32 attestationType, bytes32 sourceId, uint64 votingRound, uint64 lowestUsedTimestamp, ` +
+  `(bytes32 transactionHash, uint16 requiredConfirmations, bool provideInput, bool listEvents, uint32[] logIndices) requestBody, ` +
+  `(uint64 blockNumber, uint64 timestamp, address sourceAddress, bool isDeployment, address receivingAddress, uint256 value, bytes input, uint8 status, ` +
+  `(uint32 logIndex, address emitterAddress, bytes32[] topics, bytes data, bool removed)[] events) responseBody)`;
 
 // ============================================================
 // BOT SERVICE CLASS
@@ -885,11 +902,105 @@ export class BotService {
 
     // Step 5: Submit to feed (simplified)
     this.log('info', `  📤 Submitting proof to feed...`);
-    
-    // The actual proof submission is complex - for now just return success
-    // In production, decode proof and call updateFromProof
-    
-    return { txHash: attestHash };
+
+    if (!this.walletClient || !this.flareClient) {
+      throw new Error('Clients not initialized');
+    }
+
+    const responseHex = proofData?.response_hex as `0x${string}` | undefined;
+    const merkleProof = (proofData?.proof ?? []) as readonly `0x${string}`[];
+
+    if (!responseHex || !responseHex.startsWith('0x')) {
+      throw new Error('Invalid proof response (missing response_hex). Attestation may not be ready yet.');
+    }
+    if (!Array.isArray(merkleProof) || merkleProof.length === 0) {
+      throw new Error('Invalid proof response (missing merkle proof). Attestation may not be ready yet.');
+    }
+
+    type Hex = `0x${string}`;
+    type Address = `0x${string}`;
+
+    const [decodedResponse] = decodeAbiParameters(parseAbiParameters(RESPONSE_TUPLE_TYPE), responseHex);
+
+    const logIndices =
+      (decodedResponse as any)?.requestBody?.logIndices ?? ([] as readonly number[]);
+    const events =
+      (decodedResponse as any)?.responseBody?.events ??
+      ([] as readonly {
+        logIndex: number | bigint;
+        emitterAddress: Address;
+        topics: readonly Hex[];
+        data: Hex;
+        removed: boolean;
+      }[]);
+
+    const proofStruct = {
+      merkleProof: merkleProof as readonly Hex[],
+      data: {
+        attestationType: (decodedResponse as any).attestationType as Hex,
+        sourceId: (decodedResponse as any).sourceId as Hex,
+        votingRound: (decodedResponse as any).votingRound as bigint,
+        lowestUsedTimestamp: (decodedResponse as any).lowestUsedTimestamp as bigint,
+        requestBody: {
+          transactionHash: (decodedResponse as any).requestBody.transactionHash as Hex,
+          requiredConfirmations: (decodedResponse as any).requestBody.requiredConfirmations as number,
+          provideInput: (decodedResponse as any).requestBody.provideInput as boolean,
+          listEvents: (decodedResponse as any).requestBody.listEvents as boolean,
+          logIndices,
+        },
+        responseBody: {
+          blockNumber: (decodedResponse as any).responseBody.blockNumber as bigint,
+          timestamp: (decodedResponse as any).responseBody.timestamp as bigint,
+          sourceAddress: (decodedResponse as any).responseBody.sourceAddress as Address,
+          isDeployment: (decodedResponse as any).responseBody.isDeployment as boolean,
+          receivingAddress: (decodedResponse as any).responseBody.receivingAddress as Address,
+          value: (decodedResponse as any).responseBody.value as bigint,
+          input: (decodedResponse as any).responseBody.input as Hex,
+          status: (decodedResponse as any).responseBody.status as number,
+          events: events.map((event: (typeof events)[number]) => ({
+            logIndex: Number(event.logIndex),
+            emitterAddress: event.emitterAddress as Address,
+            topics: (event.topics ?? ([] as readonly Hex[])) as readonly Hex[],
+            data: event.data as Hex,
+            removed: event.removed,
+          })) as readonly {
+            logIndex: number;
+            emitterAddress: Address;
+            topics: readonly Hex[];
+            data: Hex;
+            removed: boolean;
+          }[],
+        },
+      },
+    } as const;
+
+    const submitHash = await this.walletClient.writeContract({
+      chain: null,
+      account: this.walletClient.account!,
+      address: feed.customFeedAddress,
+      abi: CUSTOM_FEED_ABI,
+      functionName: 'updateFromProof',
+      args: [proofStruct],
+    });
+
+    this.log('info', `  ✅ Proof submitted, tx: ${submitHash.slice(0, 10)}...`, {
+      txHash: submitHash,
+      chainId: 14,
+      kind: 'tx',
+    });
+
+    const submitReceipt = await this.flareClient.waitForTransactionReceipt({ hash: submitHash });
+    if (submitReceipt.status === 'reverted') {
+      throw new Error('Update proof transaction reverted');
+    }
+
+    const latestValue = (await this.flareClient.readContract({
+      address: feed.customFeedAddress,
+      abi: CUSTOM_FEED_ABI,
+      functionName: 'latestValue',
+    })) as bigint;
+
+    return { txHash: submitHash, price: latestValue.toString() };
   }
 
   private getSourceConfig(chainId: number): { sourceId: string } {

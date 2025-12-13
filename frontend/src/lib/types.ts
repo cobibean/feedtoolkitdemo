@@ -112,6 +112,9 @@ export interface StoredFeed {
   // Metadata
   deployedAt: string;
   deployedBy: `0x${string}`;
+
+  // Archive metadata (soft-delete in UI)
+  archivedAt?: string; // ISO timestamp; undefined/null => active
 }
 
 // Helper to normalize legacy feeds (v1.0.0) to new format (v2.0.0)
@@ -140,6 +143,9 @@ export interface StoredRecorder {
   updateInterval: number;
   deployedAt: string;
   deployedBy: `0x${string}`;
+
+  // Archive metadata (soft-delete in UI)
+  archivedAt?: string; // ISO timestamp; undefined/null => active
 }
 
 // Helper to normalize legacy recorders
@@ -167,6 +173,9 @@ export interface StoredRelay {
   supportedChainIds: number[];
   deployedAt: string;
   deployedBy: `0x${string}`;
+
+  // Archive metadata (soft-delete in UI)
+  archivedAt?: string; // ISO timestamp; undefined/null => active
 }
 
 export interface FeedsData {

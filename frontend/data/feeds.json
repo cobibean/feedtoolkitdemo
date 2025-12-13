@@ -74,7 +74,8 @@
       },
       "invertPrice": false,
       "deployedAt": "2025-12-11T05:18:00.000Z",
-      "deployedBy": "0x5d92A2486042Dd4cEE0BD6B5ffd98a8C3A6EA4Fe"
+      "deployedBy": "0x5d92A2486042Dd4cEE0BD6B5ffd98a8C3A6EA4Fe",
+      "archivedAt": "2025-12-13T03:48:25.074Z"
     },
     {
       "id": "eth-mainnet-weth-usdc",

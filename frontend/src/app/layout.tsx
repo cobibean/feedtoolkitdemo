@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import localFont from "next/font/local";
 import "./globals.css";
 import { Providers } from "@/components/providers";
+import { StorageModeProvider } from "@/context/storage-mode-context";
 
 const satoshi = localFont({
   src: [
@@ -36,9 +37,9 @@ export default function RootLayout({
   return (
     <html lang="en" suppressHydrationWarning>
       <body className={`${satoshi.variable} ${archivoBlack.variable} font-sans antialiased`}>
-        <Providers>
-        {children}
-        </Providers>
+        <StorageModeProvider>
+          <Providers>{children}</Providers>
+        </StorageModeProvider>
       </body>
     </html>
   );

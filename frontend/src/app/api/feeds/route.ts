@@ -4,11 +4,12 @@ import { join } from 'path';
 import type { FeedsData, StoredFeed, StoredRecorder, StoredRelay } from '@/lib/types';
 import { createClient } from '@supabase/supabase-js';
 
-// Check storage mode
-const USE_DATABASE = process.env.NEXT_PUBLIC_USE_DATABASE === 'true';
+// Storage mode is selected at runtime via cookie (set from the Settings page).
+// Defaults to Local JSON if cookie is missing.
+const STORAGE_MODE_COOKIE = 'flare_feeds_storage_mode';
 
-// Supabase client (only created if database mode is enabled)
-const supabase = USE_DATABASE && process.env.NEXT_PUBLIC_SUPABASE_URL && process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY
+// Supabase client (only created if env vars exist)
+const supabase = process.env.NEXT_PUBLIC_SUPABASE_URL && process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY
   ? createClient(
       process.env.NEXT_PUBLIC_SUPABASE_URL,
       process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY
@@ -39,14 +40,25 @@ function writeLocalData(data: FeedsData): void {
 }
 
 // ============ SUPABASE STORAGE ============
-async function readSupabaseData(): Promise<FeedsData> {
+async function readSupabaseData(includeArchived: boolean): Promise<FeedsData> {
   if (!supabase) return getDefaultData();
   
   try {
+    let feedsQuery = supabase.from('feeds').select('*');
+    let recordersQuery = supabase.from('recorders').select('*');
+    let relaysQuery = supabase.from('relays').select('*');
+
+    // Default: hide archived items (archived_at is null = active)
+    if (!includeArchived) {
+      feedsQuery = feedsQuery.is('archived_at', null);
+      recordersQuery = recordersQuery.is('archived_at', null);
+      relaysQuery = relaysQuery.is('archived_at', null);
+    }
+
     const [feedsResult, recordersResult, relaysResult] = await Promise.all([
-      supabase.from('feeds').select('*'),
-      supabase.from('recorders').select('*'),
-      supabase.from('relays').select('*'),
+      feedsQuery,
+      recordersQuery,
+      relaysQuery,
     ]);
 
     // Transform database format to app format
@@ -84,6 +96,7 @@ async function readSupabaseData(): Promise<FeedsData> {
       invertPrice: f.invert_price,
       deployedAt: f.deployed_at,
       deployedBy: f.deployed_by as `0x${string}`,
+      archivedAt: f.archived_at ?? undefined,
     }));
 
     const recorders: StoredRecorder[] = (recordersResult.data || []).map((r) => ({
@@ -96,6 +109,7 @@ async function readSupabaseData(): Promise<FeedsData> {
       updateInterval: r.update_interval,
       deployedAt: r.deployed_at,
       deployedBy: r.deployed_by as `0x${string}`,
+      archivedAt: r.archived_at ?? undefined,
     }));
 
     const relays: StoredRelay[] = (relaysResult.data || []).map((r) => ({
@@ -106,6 +120,7 @@ async function readSupabaseData(): Promise<FeedsData> {
       supportedChainIds: r.supported_chains || [],
       deployedAt: r.deployed_at,
       deployedBy: r.deployed_by as `0x${string}`,
+      archivedAt: r.archived_at ?? undefined,
     }));
 
     return { version: '2.0.0', feeds, recorders, relays };
@@ -231,18 +246,42 @@ async function deleteFromSupabase(id: string, type: 'feed' | 'recorder' | 'relay
   }
 }
 
+function getStorageMode(req: NextRequest): 'local' | 'database' {
+  const value = req.cookies.get(STORAGE_MODE_COOKIE)?.value;
+  return value === 'database' ? 'database' : 'local';
+}
+
+function getIncludeArchived(req: NextRequest): boolean {
+  const { searchParams } = new URL(req.url);
+  return searchParams.get('includeArchived') === 'true';
+}
+
 // ============ API HANDLERS ============
 
 // GET - Read all feeds, recorders, and relays
-export async function GET() {
+export async function GET(req: NextRequest) {
   try {
-    if (USE_DATABASE) {
-      const data = await readSupabaseData();
-      return NextResponse.json(data);
-    } else {
-      const data = readLocalData();
+    const mode = getStorageMode(req);
+    const includeArchived = getIncludeArchived(req);
+
+    if (mode === 'database') {
+      if (!supabase) {
+        return NextResponse.json({ error: 'Database not configured' }, { status: 400 });
+      }
+      const data = await readSupabaseData(includeArchived);
       return NextResponse.json(data);
     }
+
+    const data = readLocalData();
+    if (!includeArchived) {
+      return NextResponse.json({
+        ...data,
+        feeds: data.feeds.filter(f => !f.archivedAt),
+        recorders: data.recorders.filter(r => !r.archivedAt),
+        relays: (data.relays || []).filter(r => !r.archivedAt),
+      });
+    }
+    return NextResponse.json(data);
   } catch (error) {
     console.error('Error reading feeds:', error);
     return NextResponse.json(getDefaultData());
@@ -255,8 +294,13 @@ export async function POST(req: NextRequest) {
     const body = await req.json();
     const { type, ...item } = body;
 
-    if (USE_DATABASE) {
+    const mode = getStorageMode(req);
+
+    if (mode === 'database') {
       // Database mode
+      if (!supabase) {
+        return NextResponse.json({ error: 'Database not configured' }, { status: 400 });
+      }
       if (type === 'recorder') {
         const result = await addSupabaseRecorder(item as StoredRecorder);
         if (!result.success) {
@@ -273,7 +317,7 @@ export async function POST(req: NextRequest) {
           return NextResponse.json({ error: result.error }, { status: 400 });
         }
       }
-      const data = await readSupabaseData();
+      const data = await readSupabaseData(false);
       return NextResponse.json({ success: true, data });
     } else {
       // Local JSON mode
@@ -352,7 +396,12 @@ export async function DELETE(req: NextRequest) {
       );
     }
 
-    if (USE_DATABASE) {
+    const mode = getStorageMode(req);
+
+    if (mode === 'database') {
+      if (!supabase) {
+        return NextResponse.json({ error: 'Database not configured' }, { status: 400 });
+      }
       const result = await deleteFromSupabase(id, type);
       if (!result.success) {
         return NextResponse.json({ error: result.error }, { status: 400 });
@@ -380,5 +429,63 @@ export async function DELETE(req: NextRequest) {
       { error: 'Failed to delete data' },
       { status: 500 }
     );
+  }
+}
+
+// PATCH - Archive or restore feed/recorder/relay by ID
+export async function PATCH(req: NextRequest) {
+  try {
+    const mode = getStorageMode(req);
+    const body = await req.json();
+    const id = body?.id as string | undefined;
+    const type = (body?.type || 'feed') as 'feed' | 'recorder' | 'relay';
+    const action = (body?.action || '') as 'archive' | 'restore';
+
+    if (!id) {
+      return NextResponse.json({ error: 'ID is required' }, { status: 400 });
+    }
+    if (action !== 'archive' && action !== 'restore') {
+      return NextResponse.json({ error: 'Invalid action' }, { status: 400 });
+    }
+
+    if (mode === 'database') {
+      if (!supabase) {
+        return NextResponse.json({ error: 'Database not configured' }, { status: 400 });
+      }
+
+      const tableMap = { feed: 'feeds', recorder: 'recorders', relay: 'relays' } as const;
+      const table = tableMap[type];
+      const archived_at = action === 'archive' ? new Date().toISOString() : null;
+
+      const { error } = await supabase
+        .from(table)
+        .update({ archived_at })
+        .eq('id', id);
+
+      if (error) {
+        console.error('Supabase archive update error:', error);
+        return NextResponse.json({ error: error.message }, { status: 400 });
+      }
+
+      return NextResponse.json({ success: true });
+    }
+
+    // Local JSON mode
+    const data = readLocalData();
+    const archivedAt = action === 'archive' ? new Date().toISOString() : undefined;
+
+    if (type === 'recorder') {
+      data.recorders = data.recorders.map(r => (r.id === id ? { ...r, archivedAt } : r));
+    } else if (type === 'relay') {
+      data.relays = (data.relays || []).map(r => (r.id === id ? { ...r, archivedAt } : r));
+    } else {
+      data.feeds = data.feeds.map(f => (f.id === id ? { ...f, archivedAt } : f));
+    }
+
+    writeLocalData(data);
+    return NextResponse.json({ success: true });
+  } catch (error) {
+    console.error('Error archiving/restoring:', error);
+    return NextResponse.json({ error: 'Failed to update archive status' }, { status: 500 });
   }
 }

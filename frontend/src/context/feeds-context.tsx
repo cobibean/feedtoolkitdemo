@@ -16,12 +16,20 @@ interface FeedsContextType {
   relays: StoredRelay[];
   isLoading: boolean;
   error: Error | null;
+  includeArchived: boolean;
+  setIncludeArchived: (value: boolean) => void;
   addFeed: (feed: StoredFeed) => Promise<void>;
   removeFeed: (id: string) => Promise<void>;
+  archiveFeed: (id: string) => Promise<void>;
+  restoreFeed: (id: string) => Promise<void>;
   addRecorder: (recorder: StoredRecorder) => Promise<void>;
   removeRecorder: (id: string) => Promise<void>;
+  archiveRecorder: (id: string) => Promise<void>;
+  restoreRecorder: (id: string) => Promise<void>;
   addRelay: (relay: StoredRelay) => Promise<void>;
   removeRelay: (id: string) => Promise<void>;
+  archiveRelay: (id: string) => Promise<void>;
+  restoreRelay: (id: string) => Promise<void>;
   refresh: () => Promise<void>;
   // Legacy helpers (for backward compatibility)
   getFeedsByNetwork: (network: NetworkId) => StoredFeed[];
@@ -38,12 +46,14 @@ export function FeedsProvider({ children }: { children: ReactNode }) {
   const [data, setData] = useState<FeedsData>({ version: '2.0.0', feeds: [], recorders: [], relays: [] });
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<Error | null>(null);
+  const [includeArchived, setIncludeArchivedState] = useState(false);
 
   const refresh = useCallback(async () => {
     try {
       setIsLoading(true);
       setError(null);
-      const res = await fetch('/api/feeds');
+      const url = includeArchived ? '/api/feeds?includeArchived=true' : '/api/feeds';
+      const res = await fetch(url);
       if (!res.ok) throw new Error('Failed to fetch feeds');
       const json = await res.json();
       setData(json);
@@ -52,11 +62,15 @@ export function FeedsProvider({ children }: { children: ReactNode }) {
     } finally {
       setIsLoading(false);
     }
-  }, []);
+  }, [includeArchived]);
 
   useEffect(() => {
     refresh();
   }, [refresh]);
+
+  const setIncludeArchived = (value: boolean) => {
+    setIncludeArchivedState(value);
+  };
 
   const addFeed = async (feed: StoredFeed) => {
     const res = await fetch('/api/feeds', {
@@ -74,6 +88,26 @@ export function FeedsProvider({ children }: { children: ReactNode }) {
   const removeFeed = async (id: string) => {
     const res = await fetch(`/api/feeds?id=${id}&type=feed`, { method: 'DELETE' });
     if (!res.ok) throw new Error('Failed to remove feed');
+    await refresh();
+  };
+
+  const archiveFeed = async (id: string) => {
+    const res = await fetch('/api/feeds', {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ type: 'feed', id, action: 'archive' }),
+    });
+    if (!res.ok) throw new Error('Failed to archive feed');
+    await refresh();
+  };
+
+  const restoreFeed = async (id: string) => {
+    const res = await fetch('/api/feeds', {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ type: 'feed', id, action: 'restore' }),
+    });
+    if (!res.ok) throw new Error('Failed to restore feed');
     await refresh();
   };
 
@@ -96,6 +130,26 @@ export function FeedsProvider({ children }: { children: ReactNode }) {
     await refresh();
   };
 
+  const archiveRecorder = async (id: string) => {
+    const res = await fetch('/api/feeds', {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ type: 'recorder', id, action: 'archive' }),
+    });
+    if (!res.ok) throw new Error('Failed to archive recorder');
+    await refresh();
+  };
+
+  const restoreRecorder = async (id: string) => {
+    const res = await fetch('/api/feeds', {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ type: 'recorder', id, action: 'restore' }),
+    });
+    if (!res.ok) throw new Error('Failed to restore recorder');
+    await refresh();
+  };
+
   const addRelay = async (relay: StoredRelay) => {
     const res = await fetch('/api/feeds', {
       method: 'POST',
@@ -112,6 +166,26 @@ export function FeedsProvider({ children }: { children: ReactNode }) {
   const removeRelay = async (id: string) => {
     const res = await fetch(`/api/feeds?id=${id}&type=relay`, { method: 'DELETE' });
     if (!res.ok) throw new Error('Failed to remove relay');
+    await refresh();
+  };
+
+  const archiveRelay = async (id: string) => {
+    const res = await fetch('/api/feeds', {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ type: 'relay', id, action: 'archive' }),
+    });
+    if (!res.ok) throw new Error('Failed to archive relay');
+    await refresh();
+  };
+
+  const restoreRelay = async (id: string) => {
+    const res = await fetch('/api/feeds', {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ type: 'relay', id, action: 'restore' }),
+    });
+    if (!res.ok) throw new Error('Failed to restore relay');
     await refresh();
   };
 
@@ -192,12 +266,20 @@ export function FeedsProvider({ children }: { children: ReactNode }) {
         relays: data.relays || [],
         isLoading,
         error,
+        includeArchived,
+        setIncludeArchived,
         addFeed,
         removeFeed,
+        archiveFeed,
+        restoreFeed,
         addRecorder,
         removeRecorder,
+        archiveRecorder,
+        restoreRecorder,
         addRelay,
         removeRelay,
+        archiveRelay,
+        restoreRelay,
         refresh,
         getFeedsByNetwork,
         getRecordersByNetwork,

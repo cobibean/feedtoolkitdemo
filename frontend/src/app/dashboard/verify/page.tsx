@@ -53,20 +53,22 @@ export default function VerifyPage() {
   const [verificationResults, setVerificationResults] = useState<Record<string, VerificationResult>>({});
   const [isVerifyingAll, setIsVerifyingAll] = useState(false);
 
+  const activeFeeds = feeds.filter(f => !f.archivedAt);
+
   // Group feeds by source kind
-  const flareNativeFeeds = feeds.filter(f => {
+  const flareNativeFeeds = activeFeeds.filter(f => {
     const normalized = getNormalizedFeed(f);
     return getSourceKind(normalized.sourceChain.id) === 'FLARE_NATIVE';
   });
 
-  const fdcExternalFeeds = feeds.filter(f => {
+  const fdcExternalFeeds = activeFeeds.filter(f => {
     const normalized = getNormalizedFeed(f);
     return getSourceKind(normalized.sourceChain.id) === 'FDC_EXTERNAL';
   });
 
   // Verify a single Flare-native feed
   const verifyNativeFeed = async (feedId: string) => {
-    const feed = feeds.find(f => f.id === feedId);
+    const feed = activeFeeds.find(f => f.id === feedId);
     if (!feed) return;
 
     const normalized = getNormalizedFeed(feed);
@@ -171,7 +173,7 @@ export default function VerifyPage() {
               </CardTitle>
             </CardHeader>
             <CardContent>
-              <div className="text-3xl font-bold">{feeds.length}</div>
+              <div className="text-3xl font-bold">{activeFeeds.length}</div>
               <p className="text-xs text-muted-foreground mt-1">
                 Across all source chains
               </p>
