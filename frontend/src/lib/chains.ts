@@ -1,5 +1,5 @@
 // Chain configuration for cross-chain support
-// Direct chains: Flare, Ethereum, Sepolia (FDC EVMTransaction natively supported)
+// Direct chains: Flare, Coston2, Ethereum, Sepolia (FDC EVMTransaction natively supported)
 // Relay chains: All other EVM chains (prices relayed via PriceRelay on Flare)
 
 export type ChainCategory = 'direct' | 'relay';
@@ -28,6 +28,18 @@ export const SUPPORTED_CHAINS: SupportedChain[] = [
     explorerUrl: 'https://flare-explorer.flare.network',
     nativeCurrency: { name: 'Flare', symbol: 'FLR', decimals: 18 },
   },
+  // === DIRECT CHAINS (Testnet) ===
+  {
+    id: 114,
+    name: 'Coston2',
+    category: 'direct',
+    sourceId: '0x7465737443324652000000000000000000000000000000000000000000000000', // testC2FR
+    verifierPath: 'c2flr',
+    rpcUrl: 'https://coston2-api.flare.network/ext/bc/C/rpc',
+    explorerUrl: 'https://coston2-explorer.flare.network',
+    nativeCurrency: { name: 'Coston2 Flare', symbol: 'C2FLR', decimals: 18 },
+    testnet: true,
+  },
   {
     id: 1,
     name: 'Ethereum',
@@ -38,7 +50,6 @@ export const SUPPORTED_CHAINS: SupportedChain[] = [
     explorerUrl: 'https://etherscan.io',
     nativeCurrency: { name: 'Ether', symbol: 'ETH', decimals: 18 },
   },
-  // === DIRECT CHAINS (Testnet) ===
   {
     id: 11155111,
     name: 'Sepolia',

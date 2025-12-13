@@ -1,6 +1,7 @@
 'use client';
 
 import { Check, AlertTriangle, Info, Coins, Shield } from 'lucide-react';
+import { useChainId } from 'wagmi';
 import {
   Select,
   SelectContent,
@@ -35,6 +36,7 @@ export function ChainSelector({
   showGasWarning = true,
   showRelayChains = true,
 }: ChainSelectorProps) {
+  const walletChainId = useChainId();
   const selectedChain = value ? SUPPORTED_CHAINS.find(c => c.id === value) : undefined;
   const directChains = getDirectChains(includeTestnets);
   const relayChains = getRelayChains();
@@ -78,8 +80,8 @@ export function ChainSelector({
                 <div className="flex items-center gap-2">
                   <ChainIcon chainId={chain.id} />
                   <span>{chain.name}</span>
-                  {chain.id === 14 && (
-                    <span className="text-xs text-muted-foreground">(Current)</span>
+                  {chain.id === walletChainId && (
+                    <span className="text-xs text-muted-foreground">(Wallet)</span>
                   )}
                   {chain.testnet && (
                     <span className="text-xs bg-secondary px-1 rounded">Test</span>
@@ -140,12 +142,49 @@ export function ChainSelector({
 
 // Simple chain icon component
 function ChainIcon({ chainId }: { chainId: number }) {
+  const iconSrcByChainId: Record<number, string> = {
+    14: '/flarelogo.png',
+    114: '/flarelogo.png',
+    1: '/chain-icons/ethereum.png',
+    11155111: '/chain-icons/ethereum.png',
+    42161: '/chain-icons/arbitrum.png',
+    8453: '/chain-icons/base.png',
+    10: '/chain-icons/optimism.png',
+    137: '/chain-icons/polygon.png',
+    43114: '/chain-icons/avalanche.png',
+    56: '/chain-icons/bnb.png',
+    250: '/chain-icons/fantom.png',
+    324: '/chain-icons/zksync.png',
+    59144: '/chain-icons/linea.png',
+    534352: '/chain-icons/scroll.png',
+    5000: '/chain-icons/mantle.png',
+    81457: '/chain-icons/blast.png',
+    100: '/chain-icons/gnosis.png',
+    42220: '/chain-icons/celo.png',
+    1101: '/chain-icons/polygonzkevm.png',
+    34443: '/chain-icons/mode.png',
+    7777777: '/chain-icons/zora.png',
+  };
+
+  const iconSrc = iconSrcByChainId[chainId];
+
+  if (iconSrc) {
+    return (
+      <div className="w-5 h-5 rounded-full bg-white/10 overflow-hidden flex items-center justify-center">
+        {/* eslint-disable-next-line @next/next/no-img-element */}
+        <img src={iconSrc} alt="" className="w-4 h-4 object-contain" />
+      </div>
+    );
+  }
+
   // Use colored circles with first letter as simple icons
   const getChainStyle = (id: number): { bg: string; text: string } => {
     switch (id) {
       // Direct chains
       case 14:
         return { bg: 'bg-[#E62058]', text: 'F' }; // Flare pink
+      case 114:
+        return { bg: 'bg-[#E62058]', text: 'C2' }; // Coston2 (Flare pink)
       case 1:
         return { bg: 'bg-[#627EEA]', text: 'E' }; // Ethereum blue
       case 11155111:
