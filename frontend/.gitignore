@@ -20,6 +20,9 @@
 # production
 /build
 
+# Local JSON storage (mutable runtime state; commit the template instead)
+/data/feeds.json
+
 # misc
 .DS_Store
 *.pem

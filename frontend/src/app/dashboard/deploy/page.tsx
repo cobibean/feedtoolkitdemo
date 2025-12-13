@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { Header } from '@/components/layout/header';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -89,6 +89,8 @@ export default function DeployPage() {
   const [selectedRelay, setSelectedRelay] = useState<string>(''); // For relay chains
   const [poolAddress, setPoolAddress] = useState('');
   const [feedAlias, setFeedAlias] = useState('');
+  const [aliasTouched, setAliasTouched] = useState(false);
+  const [lastAutoAlias, setLastAutoAlias] = useState('');
   const [invertPrice, setInvertPrice] = useState(false);
   const [showAdvanced, setShowAdvanced] = useState(false);
   const [manualToken0Decimals, setManualToken0Decimals] = useState('');
@@ -111,6 +113,36 @@ export default function DeployPage() {
     setSelectedRecorder('');
   }, [sourceChainId]);
 
+  const suggestedAlias = useMemo(() => {
+    if (!poolInfo?.token0Symbol || !poolInfo?.token1Symbol) return '';
+
+    const normalizeSymbol = (symbol: string) => {
+      return symbol
+        .toUpperCase()
+        .replaceAll('₮', 'T')
+        .replaceAll('∞', '')
+        .replaceAll(/\s+/g, '')
+        .replaceAll(/[^A-Z0-9]/g, '');
+    };
+
+    const token0 = normalizeSymbol(poolInfo.token0Symbol);
+    const token1 = normalizeSymbol(poolInfo.token1Symbol);
+    if (!token0 || !token1) return '';
+
+    const joined = `${token0}_${token1}`;
+    return joined.slice(0, 20);
+  }, [poolInfo?.token0Symbol, poolInfo?.token1Symbol]);
+
+  // Auto-fill alias from detected pool symbols (only if user hasn't edited it).
+  useEffect(() => {
+    if (!suggestedAlias) return;
+    if (aliasTouched) return;
+    if (feedAlias && feedAlias !== lastAutoAlias) return;
+
+    setFeedAlias(suggestedAlias);
+    setLastAutoAlias(suggestedAlias);
+  }, [aliasTouched, feedAlias, lastAutoAlias, suggestedAlias]);
+
   const handleReset = () => {
     setDeployType(null);
     setStep('select');
@@ -119,6 +151,8 @@ export default function DeployPage() {
     setSelectedRelay('');
     setPoolAddress('');
     setFeedAlias('');
+    setAliasTouched(false);
+    setLastAutoAlias('');
     setInvertPrice(false);
     setShowAdvanced(false);
     setManualToken0Decimals('');
@@ -895,13 +929,40 @@ export default function DeployPage() {
                 <Input
                   id="feedAlias"
                   value={feedAlias}
-                  onChange={(e) => setFeedAlias(e.target.value.toUpperCase().replace(/[^A-Z0-9_]/g, ''))}
+                  onChange={(e) => {
+                    setAliasTouched(true);
+                    setFeedAlias(e.target.value.toUpperCase().replace(/[^A-Z0-9_]/g, ''));
+                  }}
                   placeholder="e.g., WETH_USDC"
                   maxLength={20}
                 />
                 <p className="text-sm text-muted-foreground">
                   Uppercase letters, numbers, underscores only. Max 20 chars.
                 </p>
+                {suggestedAlias && (
+                  <div className="flex items-center justify-between gap-3">
+                    <p className="text-xs text-muted-foreground">
+                      Suggested (<span className="font-mono">TOKEN0_TOKEN1</span>):{' '}
+                      <span className="font-mono">{suggestedAlias}</span>. Double-check token order and pricing
+                      direction before deploying.
+                    </p>
+                    {feedAlias !== suggestedAlias && (
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="sm"
+                        className="h-7 px-2"
+                        onClick={() => {
+                          setAliasTouched(false);
+                          setFeedAlias(suggestedAlias);
+                          setLastAutoAlias(suggestedAlias);
+                        }}
+                      >
+                        Use
+                      </Button>
+                    )}
+                  </div>
+                )}
               </div>
 
               {/* Invert Price */}

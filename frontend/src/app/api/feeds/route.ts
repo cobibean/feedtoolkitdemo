@@ -18,6 +18,7 @@ const supabase = process.env.NEXT_PUBLIC_SUPABASE_URL && process.env.NEXT_PUBLIC
 
 // ============ LOCAL JSON STORAGE ============
 const DATA_PATH = join(process.cwd(), 'data', 'feeds.json');
+const TEMPLATE_PATH = join(process.cwd(), 'data', 'feeds.template.json');
 
 function getDefaultData(): FeedsData {
   return { version: '2.0.0', feeds: [], recorders: [], relays: [] };
@@ -26,6 +27,12 @@ function getDefaultData(): FeedsData {
 function readLocalData(): FeedsData {
   try {
     if (!existsSync(DATA_PATH)) {
+      // Bootstrap from template if available (useful for first run / self-hosted)
+      if (existsSync(TEMPLATE_PATH)) {
+        const template = JSON.parse(readFileSync(TEMPLATE_PATH, 'utf-8')) as FeedsData;
+        writeFileSync(DATA_PATH, JSON.stringify(template, null, 2));
+        return template;
+      }
       return getDefaultData();
     }
     const content = readFileSync(DATA_PATH, 'utf-8');
