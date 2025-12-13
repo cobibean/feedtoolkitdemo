@@ -24,6 +24,7 @@ export const flare = {
   nativeCurrency: { name: 'Flare', symbol: 'FLR', decimals: 18 },
   rpcUrls: {
     default: { http: ['https://flare-api.flare.network/ext/bc/C/rpc'] },
+    public: { http: ['https://flare-api.flare.network/ext/bc/C/rpc'] },
   },
   blockExplorers: {
     default: { name: 'Flare Explorer', url: 'https://flare-explorer.flare.network' },
@@ -37,6 +38,7 @@ export const ethereum = {
   nativeCurrency: { name: 'Ether', symbol: 'ETH', decimals: 18 },
   rpcUrls: {
     default: { http: ['https://eth.llamarpc.com'] },
+    public: { http: ['https://eth.llamarpc.com'] },
   },
   blockExplorers: {
     default: { name: 'Etherscan', url: 'https://etherscan.io' },
@@ -50,6 +52,7 @@ export const sepolia = {
   nativeCurrency: { name: 'Sepolia ETH', symbol: 'ETH', decimals: 18 },
   rpcUrls: {
     default: { http: ['https://ethereum-sepolia-rpc.publicnode.com'] },
+    public: { http: ['https://ethereum-sepolia-rpc.publicnode.com'] },
   },
   blockExplorers: {
     default: { name: 'Sepolia Etherscan', url: 'https://sepolia.etherscan.io' },
@@ -64,6 +67,7 @@ export const coston2 = {
   nativeCurrency: { name: 'Coston2 Flare', symbol: 'C2FLR', decimals: 18 },
   rpcUrls: {
     default: { http: ['https://coston2-api.flare.network/ext/bc/C/rpc'] },
+    public: { http: ['https://coston2-api.flare.network/ext/bc/C/rpc'] },
   },
   blockExplorers: {
     default: { name: 'Coston2 Explorer', url: 'https://coston2-explorer.flare.network' },
@@ -71,8 +75,8 @@ export const coston2 = {
   testnet: true,
 } as const satisfies Chain;
 
-// Include Ethereum + Sepolia in chains array for cross-chain support
-const chains = [flare, ethereum, sepolia] as const;
+// Include Flare testnet + Ethereum testnet in chains array for cross-chain support
+const chains = [flare, coston2, ethereum, sepolia] as const;
 
 // Custom wallet configuration - desktop/browser wallets only
 // WalletConnect removed to avoid API key requirements for this dev tool
@@ -107,6 +111,7 @@ export const config =
     connectors,
     transports: {
       [flare.id]: http(),
+      [coston2.id]: http(),
       [ethereum.id]: http(),
       [sepolia.id]: http(),
     },
@@ -117,7 +122,11 @@ export const config =
 
 // Export for use in components
 export const supportedChains = chains;
-export type SupportedChainId = typeof flare.id | typeof ethereum.id | typeof sepolia.id;
+export type SupportedChainId =
+  | typeof flare.id
+  | typeof coston2.id
+  | typeof ethereum.id
+  | typeof sepolia.id;
 
 export function getChainById(chainId: number): Chain | undefined {
   return supportedChains.find(chain => chain.id === chainId);

@@ -23,7 +23,7 @@ export function Header({ title, description, showHomeChainPrompt = true }: Heade
         </div>
         <div className="flex items-center gap-3">
           <ThemeToggle />
-          <ConnectButton showBalance={false} accountStatus="address" />
+          <ConnectButton showBalance={false} accountStatus="address" chainStatus="full" />
         </div>
       </header>
       {showHomeChainPrompt && <HomeChainPrompt />}
