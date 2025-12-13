@@ -7,13 +7,67 @@
  * Key points:
  * - Uses slot0().sqrtPriceX96 for spot price
  * - Correctly handles token ordering (token0/token1)
- * - Uses BigInt math throughout (no floats)
+ * - Uses BigInt math throughout (no floats) for spot price
  * - Returns provenance metadata for reviewers
+ * 
+ * Supported chains:
+ * - Flare Mainnet (chainId: 14)
+ * - Coston2 Testnet (chainId: 114)
+ * 
+ * @module priceSources/flareNative
  */
 
-import { createPublicClient, http, type PublicClient } from 'viem';
-import { flare } from '@/lib/wagmi-config';
+import { createPublicClient, http, type PublicClient, type Chain } from 'viem';
+import { flare, coston2 } from '@/lib/wagmi-config';
 import type { DirectStateResult, PriceProvenance } from '@/lib/types';
+
+// ============================================================
+// Chain Constants
+// ============================================================
+
+/** Flare Mainnet chain ID */
+export const FLARE_CHAIN_ID = 14;
+
+/** Coston2 Testnet chain ID */
+export const COSTON2_CHAIN_ID = 114;
+
+/** Default output decimals for price values */
+export const DEFAULT_OUTPUT_DECIMALS = 6;
+
+/**
+ * Get the viem Chain definition for a Flare-native chain ID.
+ * 
+ * @param chainId - Chain ID (14 for Flare, 114 for Coston2)
+ * @returns Chain definition for viem client
+ * @throws Error if chain ID is not a supported Flare-native chain
+ */
+export function getFlareNativeChain(chainId: number): Chain {
+  switch (chainId) {
+    case FLARE_CHAIN_ID:
+      return flare;
+    case COSTON2_CHAIN_ID:
+      return coston2;
+    default:
+      throw new Error(
+        `Chain ID ${chainId} is not a Flare-native chain. ` +
+        `Supported: ${FLARE_CHAIN_ID} (Flare), ${COSTON2_CHAIN_ID} (Coston2)`
+      );
+  }
+}
+
+/**
+ * Get the human-readable name for a Flare-native chain.
+ */
+export function getFlareNativeChainName(chainId: number): string {
+  switch (chainId) {
+    case FLARE_CHAIN_ID:
+      return 'Flare';
+    case COSTON2_CHAIN_ID:
+      return 'Coston2';
+    default:
+      return `Unknown (${chainId})`;
+  }
+}
 
 // Uniswap V3 Pool ABI (minimal for price reading)
 const UNISWAP_V3_POOL_ABI = [
@@ -132,27 +186,33 @@ export function sqrtPriceX96ToPrice(
  * Read price directly from a Flare-native V3 pool using slot0()
  * 
  * This is the core function for FLARE_NATIVE feeds - no FDC involved.
+ * Uses pure BigInt arithmetic for price calculation (no floating point).
  * 
- * @param poolAddress - V3 pool contract address
+ * @param poolAddress - V3 pool contract address on Flare or Coston2
  * @param token0Decimals - Decimals for token0
  * @param token1Decimals - Decimals for token1
- * @param invertPrice - Whether to invert the price
- * @param outputDecimals - Output decimal precision (default 6)
- * @param originChainId - Chain ID for provenance (14 = Flare, 114 = Coston2)
- * @param client - Optional viem PublicClient
+ * @param invertPrice - Whether to invert the price (token0/token1 vs token1/token0)
+ * @param outputDecimals - Output decimal precision (default: 6)
+ * @param originChainId - Chain ID (14 = Flare, 114 = Coston2)
+ * @param client - Optional viem PublicClient (will create one if not provided)
+ * @returns DirectStateResult with price, provenance, and raw slot0 data
+ * @throws Error if pool is locked or chain is not supported
  */
 export async function readFlareNativePrice(
   poolAddress: `0x${string}`,
   token0Decimals: number,
   token1Decimals: number,
   invertPrice: boolean,
-  outputDecimals: number = 6,
-  originChainId: number = 14,
+  outputDecimals: number = DEFAULT_OUTPUT_DECIMALS,
+  originChainId: number = FLARE_CHAIN_ID,
   client?: PublicClient
 ): Promise<DirectStateResult> {
-  // Create client if not provided
+  // Get the correct chain definition for the origin chain
+  const chain = getFlareNativeChain(originChainId);
+  
+  // Create client with correct chain if not provided
   const publicClient = client ?? createPublicClient({
-    chain: flare,
+    chain,
     transport: http(),
   });
 
@@ -187,12 +247,12 @@ export async function readFlareNativePrice(
   const provenance: PriceProvenance = {
     sourceKind: 'FLARE_NATIVE',
     method: 'SLOT0_SPOT',
-    originChain: originChainId === 114 ? 'Coston2' : 'Flare',
-    originChainId: originChainId,
+    originChain: getFlareNativeChainName(originChainId),
+    originChainId,
     timestamp: Number(block.timestamp),
     blockNumber: Number(blockNumber),
     sqrtPriceX96: sqrtPriceX96.toString(),
-    tick: tick,
+    tick,
   };
 
   return {
@@ -206,10 +266,35 @@ export async function readFlareNativePrice(
   };
 }
 
+// ============================================================
+// TWAP Implementation (Experimental)
+// ============================================================
+
 /**
- * Read TWAP price using pool.observe() (optional, more manipulation-resistant)
+ * ⚠️ EXPERIMENTAL: Read TWAP price using pool.observe()
  * 
- * @param secondsAgo - TWAP window in seconds (e.g., 300 for 5 minutes)
+ * This function provides Time-Weighted Average Price which is more resistant
+ * to single-block manipulation than spot price. However, it uses a floating-point
+ * approximation for tick-to-price conversion which may have minor precision loss.
+ * 
+ * **Precision Warning**: The `tickToSqrtPriceX96Approximate` helper uses
+ * `Math.pow()` which introduces floating-point error. For production use cases
+ * requiring exact precision, implement a proper BigInt-based tick conversion
+ * using Uniswap V3's TickMath library logic.
+ * 
+ * For most display/UI purposes, this approximation is sufficient (< 0.01% error).
+ * 
+ * @param poolAddress - V3 pool contract address on Flare or Coston2
+ * @param token0Decimals - Decimals for token0
+ * @param token1Decimals - Decimals for token1
+ * @param invertPrice - Whether to invert the price
+ * @param secondsAgo - TWAP window in seconds (default: 300 = 5 minutes)
+ * @param outputDecimals - Output decimal precision (default: 6)
+ * @param originChainId - Chain ID (14 = Flare, 114 = Coston2)
+ * @param client - Optional viem PublicClient
+ * @returns DirectStateResult with TWAP price and provenance
+ * 
+ * @experimental This function uses floating-point approximation for tick conversion
  */
 export async function readFlareNativeTWAP(
   poolAddress: `0x${string}`,
@@ -217,12 +302,15 @@ export async function readFlareNativeTWAP(
   token1Decimals: number,
   invertPrice: boolean,
   secondsAgo: number = 300,
-  outputDecimals: number = 6,
-  originChainId: number = 14,
+  outputDecimals: number = DEFAULT_OUTPUT_DECIMALS,
+  originChainId: number = FLARE_CHAIN_ID,
   client?: PublicClient
 ): Promise<DirectStateResult> {
+  // Get the correct chain definition
+  const chain = getFlareNativeChain(originChainId);
+  
   const publicClient = client ?? createPublicClient({
-    chain: flare,
+    chain,
     transport: http(),
   });
 
@@ -239,26 +327,21 @@ export async function readFlareNativeTWAP(
 
   const [tickCumulatives] = observeResult;
   
-  // Calculate average tick over the window
+  // Calculate arithmetic mean tick over the TWAP window
+  // tickCumulatives[0] = cumulative tick at (now - secondsAgo)
+  // tickCumulatives[1] = cumulative tick at now
   const tickCumulativeDiff = tickCumulatives[1] - tickCumulatives[0];
   const averageTick = Number(tickCumulativeDiff) / secondsAgo;
+  const roundedTick = Math.round(averageTick);
   
-  // Convert tick to sqrtPriceX96
-  // tick = log_1.0001(price) => price = 1.0001^tick
-  // sqrtPrice = sqrt(price) = 1.0001^(tick/2)
-  // sqrtPriceX96 = sqrtPrice * 2^96
-  
-  // For integer math, we'll use the average tick to get sqrtPriceX96
-  // sqrtPriceX96 = floor(1.0001^(tick/2) * 2^96)
-  
-  // We need to be careful with precision here - using an approximation
-  // that works well for typical tick ranges
-  const sqrtPriceX96 = tickToSqrtPriceX96(Math.round(averageTick));
+  // Convert tick to sqrtPriceX96 using approximate method
+  // ⚠️ This uses floating point - see function docs for precision notes
+  const sqrtPriceX96 = tickToSqrtPriceX96Approximate(roundedTick);
 
   // Get block timestamp
   const block = await publicClient.getBlock({ blockNumber });
 
-  // Calculate price
+  // Calculate price using the (exact) BigInt conversion
   const price = sqrtPriceX96ToPrice(
     sqrtPriceX96,
     token0Decimals,
@@ -270,12 +353,12 @@ export async function readFlareNativeTWAP(
   const provenance: PriceProvenance = {
     sourceKind: 'FLARE_NATIVE',
     method: 'TWAP_OBSERVE',
-    originChain: originChainId === 114 ? 'Coston2' : 'Flare',
-    originChainId: originChainId,
+    originChain: getFlareNativeChainName(originChainId),
+    originChainId,
     timestamp: Number(block.timestamp),
     blockNumber: Number(blockNumber),
     sqrtPriceX96: sqrtPriceX96.toString(),
-    tick: Math.round(averageTick),
+    tick: roundedTick,
   };
 
   return {
@@ -284,43 +367,61 @@ export async function readFlareNativeTWAP(
     timestamp: Number(block.timestamp),
     blockNumber,
     sqrtPriceX96,
-    tick: Math.round(averageTick),
+    tick: roundedTick,
     provenance,
   };
 }
 
 /**
- * Convert a tick to sqrtPriceX96
+ * ⚠️ APPROXIMATE: Convert a tick to sqrtPriceX96 using floating-point math
+ * 
+ * This is an approximation suitable for display purposes. For exact calculations,
+ * a proper BigInt implementation of Uniswap V3's TickMath is required.
  * 
  * Formula: sqrtPriceX96 = sqrt(1.0001^tick) * 2^96
  *                       = 1.0001^(tick/2) * 2^96
  * 
- * We use BigInt exponentiation for precision
+ * Precision: ~0.01% error for typical tick ranges (-887272 to 887272)
+ * 
+ * @param tick - The tick value (integer)
+ * @returns Approximate sqrtPriceX96 as BigInt
+ * 
+ * @internal This function is intentionally named to indicate it's approximate
  */
-function tickToSqrtPriceX96(tick: number): bigint {
-  // Use Uniswap V3's exact formula
-  // sqrt(1.0001^tick) = sqrt(1.0001)^tick
-  // sqrt(1.0001) ≈ 1.00004999875
+function tickToSqrtPriceX96Approximate(tick: number): bigint {
+  // Validate tick is within Uniswap V3 bounds
+  const MIN_TICK = -887272;
+  const MAX_TICK = 887272;
   
-  // For simplicity and precision, we'll use the inverse of the standard formula:
-  // sqrtPriceX96 = 2^96 * sqrt(1.0001^tick)
+  if (tick < MIN_TICK || tick > MAX_TICK) {
+    throw new Error(`Tick ${tick} out of bounds [${MIN_TICK}, ${MAX_TICK}]`);
+  }
   
-  // JavaScript doesn't have BigInt pow with fractional exponents, so we use
-  // a lookup table approach or approximation for typical tick ranges
-  
-  // Simple approximation: use floating point then convert
+  // sqrt(1.0001^tick) = 1.0001^(tick/2)
+  // Using JavaScript's Math.pow (IEEE 754 double precision)
   const sqrtPrice = Math.pow(1.0001, tick / 2);
+  
+  // Scale by 2^96
   const sqrtPriceX96Float = sqrtPrice * Number(Q96);
   
-  // Convert to BigInt (this is approximate but good enough for TWAP display)
+  // Convert to BigInt
+  // Note: This loses precision for very large/small ticks
+  // For production, implement proper fixed-point arithmetic
   return BigInt(Math.floor(sqrtPriceX96Float));
 }
 
 /**
- * Validate a pool can be read (useful for UI checks)
+ * Validate that a pool can be read from a Flare-native chain.
+ * Useful for UI pre-checks before attempting price reads.
+ * 
+ * @param poolAddress - V3 pool contract address
+ * @param originChainId - Chain ID (14 = Flare, 114 = Coston2)
+ * @param client - Optional viem PublicClient
+ * @returns Validation result with pool info if valid
  */
 export async function validateFlarePool(
   poolAddress: `0x${string}`,
+  originChainId: number = FLARE_CHAIN_ID,
   client?: PublicClient
 ): Promise<{
   valid: boolean;
@@ -330,8 +431,10 @@ export async function validateFlarePool(
   error?: string;
 }> {
   try {
+    const chain = getFlareNativeChain(originChainId);
+    
     const publicClient = client ?? createPublicClient({
-      chain: flare,
+      chain,
       transport: http(),
     });
 
