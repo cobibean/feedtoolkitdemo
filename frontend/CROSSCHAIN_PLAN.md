@@ -89,10 +89,10 @@ No gas abstraction for v1. Document requirement clearly in UI with messaging lik
 ### 4. Testing Strategy
 
 ```
-ETH Sepolia → Flare Mainnet → ETH Mainnet
+Ethereum Mainnet → Flare Mainnet
 ```
 
-Skip Coston2 (Flare mainnet already validated). Focus on proving multi-sourceId FDC attestation works.
+Flare mainnet is already validated. Focus on proving multi-sourceId FDC attestation works.
 
 ### 5. Implementation Order: Phase 1 First
 
@@ -144,11 +144,6 @@ const VERIFIER_URLS = {
   14: {
     FLR: 'https://fdc-verifiers-mainnet.flare.network/verifier/flr/EVMTransaction/prepareRequest',
     ETH: 'https://fdc-verifiers-mainnet.flare.network/verifier/eth/EVMTransaction/prepareRequest',
-  },
-  // Testnet (Coston2)
-  114: {
-    testFLR: 'https://fdc-verifiers-testnet.flare.network/verifier/c2flr/EVMTransaction/prepareRequest',
-    testETH: 'https://fdc-verifiers-testnet.flare.network/verifier/sepolia/EVMTransaction/prepareRequest',
   },
 };
 ```
@@ -248,7 +243,6 @@ export interface SupportedChain {
   explorerUrl: string;
   nativeCurrency: { name: string; symbol: string; decimals: number };
   v3FactoryAddress?: string;   // Uniswap V3 factory for pool validation
-  testnet?: boolean;           // For Sepolia, etc.
 }
 
 export const SUPPORTED_CHAINS: SupportedChain[] = [
@@ -274,21 +268,7 @@ export const SUPPORTED_CHAINS: SupportedChain[] = [
     nativeCurrency: { name: 'Ether', symbol: 'ETH', decimals: 18 },
     v3FactoryAddress: '0x1F98431c8aD98523631AE4a59f267346ea31F984',
   },
-  
-  // === DIRECT CHAINS (Testnet) ===
-  {
-    id: 11155111,
-    name: 'Sepolia',
-    category: 'direct',
-    sourceId: '0x7465737445544800000000000000000000000000000000000000000000000000',
-    verifierPath: 'sepolia',
-    rpcUrl: 'https://rpc.sepolia.org',
-    explorerUrl: 'https://sepolia.etherscan.io',
-    nativeCurrency: { name: 'Sepolia ETH', symbol: 'ETH', decimals: 18 },
-    v3FactoryAddress: '0x0227628f3F023bb0B980b67D528571c95c6DaC1c', // Uniswap V3 on Sepolia
-    testnet: true,
-  },
-  
+
   // === RELAY CHAINS (Bot-relayed to Flare) ===
   {
     id: 42161,
@@ -1370,11 +1350,6 @@ const VERIFIER_URLS: Record<number, Record<string, string>> = {
     flr: 'https://fdc-verifiers-mainnet.flare.network/verifier/flr/EVMTransaction/prepareRequest',
     eth: 'https://fdc-verifiers-mainnet.flare.network/verifier/eth/EVMTransaction/prepareRequest',
   },
-  // Testnet (Coston2)
-  114: {
-    c2flr: 'https://fdc-verifiers-testnet.flare.network/verifier/c2flr/EVMTransaction/prepareRequest',
-    sepolia: 'https://fdc-verifiers-testnet.flare.network/verifier/sepolia/EVMTransaction/prepareRequest',
-  },
 };
 
 export async function POST(request: NextRequest) {
@@ -1522,19 +1497,18 @@ export async function POST(request: NextRequest) {
 
 **Goal:** Add Ethereum as a direct source chain using existing architecture.
 
-**Testing Path:** ETH Sepolia → Flare Mainnet → ETH Mainnet
+**Testing Path:** Ethereum Mainnet → Flare Mainnet
 
 **Tasks:**
-1. [x] Create `lib/chains.ts` with Flare, Ethereum, Sepolia
-2. [x] Update wagmi config to include Ethereum + Sepolia
+1. [x] Create `lib/chains.ts` with Flare, Ethereum
+2. [x] Update wagmi config to include Ethereum
 3. [x] Update `lib/types.ts` with backward-compatible sourceChain
 4. [x] Extend FDC API routes for multi-sourceId (including Sepolia)
 5. [x] Add network switching flow to update hook
 6. [x] Add chain selection to deploy page (Flare/Ethereum only for Phase 1)
 7. [x] Normalize legacy feeds in feeds-context
 8. [x] Update monitor UI to show source chain
-9. [ ] Test: Sepolia pool → Flare attestation
-10. [ ] Test: ETH Mainnet pool → Flare attestation
+9. [ ] Test: ETH Mainnet pool → Flare attestation
 
 **UX Requirements:** ✅ Implemented
 - Clear message: "You need ETH to record prices on Ethereum"
@@ -1558,7 +1532,7 @@ export async function POST(request: NextRequest) {
 5. [x] Create `/api/relay/fetch-price` endpoint (with block timestamp)
 6. [ ] Document relay architecture
 
-**Note:** Skip Coston2 — deploy directly to mainnet since relay is lower risk (just emits events).
+**Note:** Deploy directly to mainnet since relay is lower risk (just emits events).
 
 **Security Checklist (Phase 2):** ✅ All Implemented
 - [x] PriceRelay stores token0/token1 per pool on `enablePool()`
@@ -1584,7 +1558,7 @@ export async function POST(request: NextRequest) {
 5. [x] Update deploy modal for relay chain flow - PriceRelay deploy + relay feed creation
 6. [x] Update monitor page for relay feeds - Trust model indicators + relay-specific progress steps
 7. [x] Add trust model UI components - ChainSelector with relay warnings, relay badges
-8. [ ] Full E2E testing on testnet - Pending (requires deployed PriceRelay)
+8. [ ] Full E2E testing - Pending (requires deployed PriceRelay)
 
 **Deliverables:**
 - ✅ Users can create feeds from Arbitrum, Base, Optimism, Polygon
@@ -1645,11 +1619,11 @@ export async function POST(request: NextRequest) {
 ### Confirmed Testing Path
 
 ```
-Phase 1: ETH Sepolia → Flare Mainnet → ETH Mainnet
+Phase 1: Ethereum Mainnet → Flare Mainnet
 Phase 2+: Relay chains on Flare Mainnet
 ```
 
-Skip Coston2 — Flare mainnet FDC already validated with existing Flare pools.
+Flare mainnet FDC is already validated with existing Flare pools.
 
 ### Unit Tests
 
@@ -1707,7 +1681,7 @@ describe('/api/fdc/prepare-request', () => {
 
 3. ~~**Ethereum Gas Strategy:**~~ → **Require user to have ETH.** Document requirement in UI.
 
-4. ~~**Testnet Strategy:**~~ → **Sepolia only.** Skip Coston2 (Flare mainnet already validated).
+4. ~~**Testnet Strategy:**~~ → Flare mainnet is already validated.
 
 ### Remaining Open Questions
 

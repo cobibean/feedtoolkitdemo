@@ -301,9 +301,7 @@ BOT_CHECK_INTERVAL_SECONDS=60
 | Network | Chain ID | RPC |
 |---------|----------|-----|
 | Flare Mainnet | 14 | flare-api.flare.network |
-| Coston2 Testnet | 114 | coston2-api.flare.network |
 | Ethereum Mainnet | 1 | eth.llamarpc.com |
-| Sepolia Testnet | 11155111 | ethereum-sepolia-rpc.publicnode.com |
 
 ## Cost Per Update
 
@@ -401,7 +399,6 @@ The toolkit supports pools from multiple EVM chains:
 |--------------|------|-------------|--------|
 | Flare | Direct | Trustless (FDC) | ✅ Active |
 | Ethereum | Direct | Trustless (FDC) | ✅ Phase 1 |
-| Sepolia (testnet) | Direct | Trustless (FDC) | ✅ Phase 1 |
 | Arbitrum, Base, OP, Polygon | Relay | Bot + FDC | ⏳ Phase 2+ |
 
 ### Network Switching Flow (Ethereum)

@@ -62,9 +62,8 @@ Before you start, you'll need:
 1. **Node.js v18 or higher** — [Download here](https://nodejs.org/)
    - Not sure if you have it? Run `node --version` in your terminal
    
-2. **A wallet with FLR tokens** 
-   - For testing: Use [Coston2 testnet](https://faucet.flare.network/) (free tokens!)
-   - For production: You'll need real FLR on mainnet
+2. **A wallet with FLR tokens**
+   - You'll need FLR tokens to pay for gas and FDC attestation fees
    
 3. **A Uniswap V3 pool address** on Flare
    - This is the trading pair you want to create a price feed for
@@ -123,7 +122,7 @@ Go to [http://localhost:3000](http://localhost:3000) in your browser.
 
 1. Click **"Connect Wallet"** in the top right
 2. Choose MetaMask (or Rabby, Coinbase Wallet, etc.)
-3. Switch to **Coston2** (testnet) or **Flare Mainnet**
+3. Switch to **Flare Mainnet**
 
 ### Step 5: Deploy Your First Feed
 
@@ -263,17 +262,6 @@ The bot will automatically update your feeds every few minutes.
 
 ---
 
-## Testing on Testnet First (Recommended!)
-
-Before spending real FLR, test everything on Coston2:
-
-1. Get free testnet tokens: [Flare Faucet](https://faucet.flare.network)
-2. Switch to Coston2 in the app (top left network switcher)
-3. Deploy and test your feed
-4. When ready, switch to Mainnet and redeploy
-
----
-
 ## Troubleshooting
 
 ### "Pool not enabled"
@@ -283,7 +271,7 @@ The app will prompt you to enable the pool — just confirm the transaction.
 You need to wait 5 minutes between updates. This is to prevent spam.
 
 ### "Low balance" warning
-You need FLR for gas + attestation fees. Get testnet tokens from the [faucet](https://faucet.flare.network) or buy FLR for mainnet.
+You need FLR for gas + attestation fees. Buy FLR tokens to use the app.
 
 ### "Attestation taking forever"
 FDC attestations take 90-180 seconds. The progress bar shows you where you are. If it's stuck, check your internet connection.
@@ -325,7 +313,6 @@ This codebase is designed to be AI-friendly:
 - **Flare Docs**: [docs.flare.network](https://docs.flare.network)
 - **FDC Docs**: [docs.flare.network/tech/fdc](https://docs.flare.network/tech/fdc/)
 - **Flare Discord**: [discord.flare.network](https://discord.flare.network)
-- **Testnet Faucet**: [faucet.flare.network](https://faucet.flare.network)
 
 ---
 

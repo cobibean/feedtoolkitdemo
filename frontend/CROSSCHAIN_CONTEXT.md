@@ -44,10 +44,10 @@ Users must have ETH on Ethereum to call `recordPrice()`. Document this requireme
 ### 4. Testing Strategy
 
 ```
-ETH Sepolia → Flare Mainnet → ETH Mainnet
+Ethereum Mainnet → Flare Mainnet
 ```
 
-Skip Coston2 (Flare mainnet already validated). Focus on proving multi-sourceId FDC attestation works.
+Flare mainnet is already validated. Focus on proving multi-sourceId FDC attestation works.
 
 ### 5. Implementation Order
 
@@ -149,7 +149,6 @@ export interface SupportedChain {
   rpcUrl: string;
   explorerUrl: string;
   nativeCurrency: { name: string; symbol: string; decimals: number };
-  testnet?: boolean;  // For Sepolia, etc.
 }
 
 export const SUPPORTED_CHAINS: SupportedChain[] = [
@@ -173,18 +172,6 @@ export const SUPPORTED_CHAINS: SupportedChain[] = [
     rpcUrl: 'https://eth.llamarpc.com',
     explorerUrl: 'https://etherscan.io',
     nativeCurrency: { name: 'Ether', symbol: 'ETH', decimals: 18 },
-  },
-  // === DIRECT CHAINS (Testnet) ===
-  {
-    id: 11155111,
-    name: 'Sepolia',
-    category: 'direct',
-    sourceId: '0x7465737445544800000000000000000000000000000000000000000000000000', // testETH
-    verifierPath: 'sepolia',
-    rpcUrl: 'https://rpc.sepolia.org',
-    explorerUrl: 'https://sepolia.etherscan.io',
-    nativeCurrency: { name: 'Sepolia ETH', symbol: 'ETH', decimals: 18 },
-    testnet: true,
   },
   // === RELAY CHAINS ===
   {
@@ -756,36 +743,8 @@ export const ethereum = {
   },
 } as const satisfies Chain;
 
-// Sepolia (NEW - for testing)
-export const sepolia = {
-  id: 11155111,
-  name: 'Sepolia',
-  nativeCurrency: { name: 'Sepolia ETH', symbol: 'ETH', decimals: 18 },
-  rpcUrls: {
-    default: { http: ['https://rpc.sepolia.org'] },
-  },
-  blockExplorers: {
-    default: { name: 'Sepolia Etherscan', url: 'https://sepolia.etherscan.io' },
-  },
-  testnet: true,
-} as const satisfies Chain;
-
-// Coston2 (existing - keep for reference but not in active chains)
-export const coston2 = {
-  id: 114,
-  name: 'Coston2',
-  nativeCurrency: { name: 'Coston2 Flare', symbol: 'C2FLR', decimals: 18 },
-  rpcUrls: {
-    default: { http: ['https://coston2-api.flare.network/ext/bc/C/rpc'] },
-  },
-  blockExplorers: {
-    default: { name: 'Coston2 Explorer', url: 'https://coston2-explorer.flare.network' },
-  },
-  testnet: true,
-} as const satisfies Chain;
-
-// Include Ethereum + Sepolia in chains array
-const chains = [flare, ethereum, sepolia] as const;
+// Include Ethereum in chains array
+const chains = [flare, ethereum] as const;
 
 const connectors = connectorsForWallets(
   [
@@ -806,13 +765,12 @@ export const config = createConfig({
   transports: {
     [flare.id]: http(),
     [ethereum.id]: http(),
-    [sepolia.id]: http(),
   },
   ssr: true,
 });
 
 export const supportedChains = chains;
-export type SupportedChainId = typeof flare.id | typeof ethereum.id | typeof sepolia.id;
+export type SupportedChainId = typeof flare.id | typeof ethereum.id;
 
 export function getChainById(chainId: number): Chain | undefined {
   return supportedChains.find(chain => chain.id === chainId);
@@ -844,16 +802,10 @@ const VERIFIER_CONFIG: Record<number, { path: string; sourceId: string }> = {
     path: 'eth',
     sourceId: '0x4554480000000000000000000000000000000000000000000000000000000000',
   },
-  // Sepolia Testnet (uses testnet verifiers)
-  11155111: {
-    path: 'sepolia',
-    sourceId: '0x7465737445544800000000000000000000000000000000000000000000000000',
-  },
 };
 
 const VERIFIER_BASE_URLS: Record<number, string> = {
   14: 'https://fdc-verifiers-mainnet.flare.network/verifier',
-  114: 'https://fdc-verifiers-testnet.flare.network/verifier',
 };
 
 export async function POST(request: NextRequest) {
@@ -1014,17 +966,16 @@ async function updateRelayFeed(feed: StoredFeed) {
 
 ### Phase 1: Ethereum Direct (Week 1-2)
 
-**Testing Path:** ETH Sepolia → Flare Mainnet → ETH Mainnet
+**Testing Path:** Ethereum Mainnet → Flare Mainnet
 
-1. Create `lib/chains.ts` (include Sepolia for testing)
-2. Modify `lib/wagmi-config.ts` (add Ethereum + Sepolia)
+1. Create `lib/chains.ts` (include Ethereum)
+2. Modify `lib/wagmi-config.ts` (add Ethereum)
 3. Modify `lib/types.ts` (add sourceChain, backward compatible)
 4. Modify `api/fdc/prepare-request/route.ts` (multi-sourceId)
 5. Modify `use-feed-updater.ts` (handle network switching)
 6. Modify deploy page (add chain selection for Ethereum)
 7. Modify feeds-context (normalize legacy feeds)
-8. Test: Sepolia pool → Flare attestation
-9. Test: ETH Mainnet pool → Flare attestation
+8. Test: ETH Mainnet pool → Flare attestation
 
 **Ethereum UX Requirements:**
 - Clear message: "You need ETH to record prices on Ethereum"
@@ -1155,7 +1106,6 @@ await switchChain({ chainId: 1 }); // Ethereum
 - [ ] Feeds context normalizes legacy feeds
 - [ ] Legacy feeds (no sourceChain) display correctly
 - [ ] New Ethereum feeds save with full v2.0.0 schema
-- [ ] Sepolia pool → Flare attestation works
 - [ ] ETH Mainnet pool → Flare attestation works
 - [ ] "Requires ETH" messaging clear in UI
 - [ ] Network switch rejection handled gracefully
