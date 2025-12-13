@@ -4,7 +4,7 @@ import Image from "next/image";
 import { ConnectButton } from "@rainbow-me/rainbowkit";
 import { useAccount } from "wagmi";
 import { useRouter, useSearchParams } from "next/navigation";
-import { useEffect, Suspense } from "react";
+import { useEffect, useState, Suspense } from "react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Reveal } from "@/components/ui/reveal";
@@ -30,6 +30,15 @@ export default function LandingPage() {
   const { isConnected } = useAccount();
   const router = useRouter();
   const goToDashboard = () => router.push('/dashboard');
+  
+  // Prevent hydration mismatch by only checking connection state after mount
+  const [mounted, setMounted] = useState(false);
+  useEffect(() => {
+    setMounted(true);
+  }, []);
+  
+  // Use mounted check to ensure consistent SSR/client rendering
+  const showConnected = mounted && isConnected;
 
   return (
     <div className="min-h-screen bg-background">
@@ -92,7 +101,7 @@ export default function LandingPage() {
 
               <Reveal delay={150}>
                 <div className="flex flex-col sm:flex-row gap-4">
-                  {isConnected ? (
+                  {showConnected ? (
                     <Button
                       size="lg"
                       onClick={goToDashboard}
@@ -103,8 +112,8 @@ export default function LandingPage() {
                     </Button>
                   ) : (
                     <ConnectButton.Custom>
-                      {({ openConnectModal, mounted }) => {
-                        const ready = mounted;
+                      {({ openConnectModal, mounted: walletMounted }) => {
+                        const ready = walletMounted;
                         return (
                           <Button
                             size="lg"
@@ -298,7 +307,7 @@ export default function LandingPage() {
           <p className="text-muted-foreground mb-8 max-w-xl mx-auto">
             Connect your wallet to start deploying custom price feeds on Flare Network
           </p>
-          {isConnected ? (
+          {showConnected ? (
             <Button
               size="lg"
               onClick={goToDashboard}
@@ -309,8 +318,8 @@ export default function LandingPage() {
             </Button>
           ) : (
             <ConnectButton.Custom>
-              {({ openConnectModal, mounted }) => {
-                const ready = mounted;
+              {({ openConnectModal, mounted: walletMounted }) => {
+                const ready = walletMounted;
                 return (
                   <Button
                     size="lg"
