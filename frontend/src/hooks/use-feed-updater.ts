@@ -9,6 +9,7 @@ import { flare, ethereum, sepolia, coston2 } from '@/lib/wagmi-config';
 import { PRICE_RELAY_ABI } from '@/lib/artifacts/PriceRelay';
 import { readFlareNativePrice } from '@/lib/priceSources/flareNative';
 import { getSourceKind, type PriceProvenance, type DirectStateResult } from '@/lib/types';
+import { waitForChainId } from '@/lib/utils';
 
 // FDC Contract Addresses (on Flare)
 const FDC_CONFIG = {
@@ -312,31 +313,6 @@ export function useFeedUpdater(): UseFeedUpdaterResult {
     setCancelled(true);
   }, []);
 
-  const waitForChainId = useCallback(
-    async (targetChainId: number, timeoutMs: number = 15_000) => {
-      if (!publicClient) return;
-      const start = Date.now();
-      const targetChain = getSourceChainById(targetChainId);
-      const targetName = targetChain?.name || `chain ${targetChainId}`;
-
-      while (Date.now() - start < timeoutMs) {
-        try {
-          const currentChainId = await publicClient.getChainId();
-          if (currentChainId === targetChainId) {
-            return;
-          }
-        } catch {
-          // Ignore temporary read failures while waiting for the wallet to settle.
-        }
-
-        await new Promise(resolve => setTimeout(resolve, 500));
-      }
-
-      throw new Error(`Timed out waiting for wallet to switch to ${targetName}. Please switch networks manually.`);
-    },
-    [publicClient]
-  );
-
   /**
    * FLARE_NATIVE PATH: Read price directly from on-chain state
    * 
@@ -399,11 +375,11 @@ export function useFeedUpdater(): UseFeedUpdaterResult {
       if (cancelled) throw new Error('Cancelled by user');
 
       // Ensure wallet is on the chain where the feed contract is deployed.
-      if (chainId !== originChainId) {
-        updateProgress('switching-to-source', `Switching to ${chainName} for native update...`);
-        await switchChainAsync({ chainId: originChainId });
-        await waitForChainId(originChainId);
-      }
+        if (chainId !== originChainId) {
+          updateProgress('switching-to-source', `Switching to ${chainName} for native update...`);
+          await switchChainAsync({ chainId: originChainId });
+          await waitForChainId(publicClient, originChainId, { chainName });
+        }
 
       const nativeWalletClient = await getWalletClient(wagmiConfig, { chainId: originChainId });
       if (!nativeWalletClient) {
@@ -587,7 +563,7 @@ export function useFeedUpdater(): UseFeedUpdaterResult {
           updateProgress('switching-to-flare', 'Switching to Flare for relay...');
           try {
             await switchChainAsync({ chainId: 14 });
-            await waitForChainId(14);
+            await waitForChainId(publicClient, 14, { chainName: 'Flare' });
           } catch (switchError) {
             if ((switchError as Error).message?.includes('rejected')) {
               throw new Error('Network switch to Flare rejected.');
@@ -738,7 +714,7 @@ export function useFeedUpdater(): UseFeedUpdaterResult {
             updateProgress('switching-to-flare', 'Switching to Flare for attestation...');
             try {
               await switchChainAsync({ chainId: 14 });
-            await waitForChainId(14);
+              await waitForChainId(publicClient, 14, { chainName: 'Flare' });
             } catch (switchError) {
               if ((switchError as Error).message?.includes('rejected')) {
                 throw new Error('Network switch to Flare rejected. Please switch manually and try again.');
@@ -756,7 +732,7 @@ export function useFeedUpdater(): UseFeedUpdaterResult {
           try {
             await switchChainAsync({ chainId: sourceChainId });
             currentChainId = sourceChainId;
-            await waitForChainId(sourceChainId);
+            await waitForChainId(publicClient, sourceChainId, { chainName: sourceChain?.name || `chain ${sourceChainId}` });
           } catch (switchError) {
             if ((switchError as Error).message?.includes('rejected')) {
               throw new Error('Network switch rejected. Please switch manually and try again.');
@@ -863,7 +839,7 @@ export function useFeedUpdater(): UseFeedUpdaterResult {
           
           try {
             await switchChainAsync({ chainId: 14 });
-            await waitForChainId(14);
+            await waitForChainId(publicClient, 14, { chainName: 'Flare' });
           } catch (switchError) {
             if ((switchError as Error).message?.includes('rejected')) {
               throw new Error('Network switch to Flare rejected. Please switch manually and try again.');

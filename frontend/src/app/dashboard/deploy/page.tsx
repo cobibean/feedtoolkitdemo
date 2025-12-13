@@ -39,6 +39,7 @@ import { CROSSCHAIN_POOL_PRICE_CUSTOM_FEED_ABI, CROSSCHAIN_POOL_PRICE_CUSTOM_FEE
 import { getAddress, createPublicClient, http } from 'viem';
 import { PRICE_RELAY_ABI, PRICE_RELAY_BYTECODE } from '@/lib/artifacts/PriceRelay';
 import { isRelayChain } from '@/lib/chains';
+import { waitForChainId } from '@/lib/utils';
 
 type DeployStep = 'select' | 'configure' | 'review' | 'deploying' | 'success' | 'error';
 
@@ -114,6 +115,7 @@ export default function DeployPage() {
   }, [sourceChainId]);
 
   useEffect(() => {
+    if (!publicClient) return;
     if (!chainId) return;
     if (!isDirectChain(sourceChainId)) return;
     if (chainId === sourceChainId) return;
@@ -126,6 +128,7 @@ export default function DeployPage() {
       toast.info(`Switching to ${targetName}...`, { id: toastId });
       try {
         await switchChainAsync({ chainId: sourceChainId });
+        await waitForChainId(publicClient, sourceChainId, { chainName: targetName });
         if (!active) return;
         toast.success(`Switched to ${targetName}`, { id: toastId });
       } catch (error) {
@@ -144,7 +147,7 @@ export default function DeployPage() {
     return () => {
       active = false;
     };
-  }, [chainId, sourceChainId, sourceChain, switchChainAsync]);
+  }, [chainId, sourceChainId, sourceChain, switchChainAsync, publicClient]);
 
   const suggestedAlias = useMemo(() => {
     if (!poolInfo?.token0Symbol || !poolInfo?.token1Symbol) return '';
@@ -216,8 +219,9 @@ export default function DeployPage() {
         toast.info(`Switching to ${sourceChain?.name}...`);
         try {
           await switchChainAsync({ chainId: sourceChainId });
-          // Wait for wallet to update
-          await new Promise(resolve => setTimeout(resolve, 1500));
+          await waitForChainId(publicClient, sourceChainId, {
+            chainName: sourceChain?.name || `chain ${sourceChainId}`,
+          });
         } catch (switchError) {
           if ((switchError as Error).message?.includes('rejected')) {
             throw new Error('Network switch rejected');
@@ -310,7 +314,7 @@ export default function DeployPage() {
         toast.info('Switching to Flare...');
         try {
           await switchChainAsync({ chainId: 14 });
-          await new Promise(resolve => setTimeout(resolve, 1500));
+          await waitForChainId(publicClient, 14, { chainName: 'Flare' });
         } catch (switchError) {
           if ((switchError as Error).message?.includes('rejected')) {
             throw new Error('Network switch rejected');
@@ -409,7 +413,7 @@ export default function DeployPage() {
         toast.info('Switching to Flare for feed deployment...');
         try {
           await switchChainAsync({ chainId: 14 });
-          await new Promise(resolve => setTimeout(resolve, 1500));
+          await waitForChainId(publicClient, 14, { chainName: 'Flare' });
         } catch (switchError) {
           if ((switchError as Error).message?.includes('rejected')) {
             throw new Error('Network switch to Flare rejected');
