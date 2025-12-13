@@ -46,19 +46,25 @@ This toolkit lets you create **custom price feeds** on the Flare Network. Think 
 └──────────────────────────────────────────────────────────────────────────┘
 ```
 
-## 🆘 Need Help? Use the AI Context File!
+## 📚 Documentation
 
-This repo includes a special documentation file designed for AI coding assistants (Cursor, Claude, ChatGPT, etc.):
+### Quick Links
+
+| Guide | Description |
+|-------|-------------|
+| **[Environment Variables](Docs/configuration/environment-variables.md)** | Complete .env setup guide — **start here to avoid setup failures** |
+| **[Directory Structure](Docs/configuration/directory-structure.md)** | Where to run commands and why `cd frontend` matters |
+| **[Supported Chains](Docs/configuration/supported-chains.md)** | 20+ chains supported (direct and relay modes) |
+| **[Storage Modes](Docs/FEED_STORAGE_LOCAL_MODE.md)** | Local JSON vs Supabase configuration |
+
+### For AI Agents & Developers
 
 | File | What It's For |
 |------|---------------|
 | `CODEBASE_CONTEXT.md` | Technical overview of the entire codebase — give this to your AI agent first |
+| `frontend/CROSSCHAIN_CONTEXT.md` | Deep dive into cross-chain implementation details |
 
 **Stuck on something?** Copy the contents of `CODEBASE_CONTEXT.md` into your AI chat and ask your question. The AI will understand the codebase much better with this context.
-
-**Example prompts:**
-- "Here's my codebase context: [paste CODEBASE_CONTEXT.md]. How do I add a new feed to the monitor page?"
-- "Here's my codebase context: [paste]. I'm getting this error: [error]. What's wrong?"
 
 ---
 
@@ -107,23 +113,33 @@ npm install
 
 ### Step 2: Add Your Environment Variables
 
-For **local development**, Next.js loads env vars from the **project root you run it from**.
-
-- **If you run the web app from `frontend/`** (recommended), put your env in: **`frontend/.env`**
-- **If you run Hardhat/CLI scripts from the repo root**, you can also use **repo-root `.env`** — but the toolkit will now also fallback to `frontend/.env` for convenience.
-
-Copy the template and fill in values:
+⚠️ **This step is optional for frontend development**, but required for contract deployment and bot operation.
 
 ```bash
-# from the repo root
-cp .env.example frontend/.env
+# Create .env file in frontend directory
+cd frontend
+cp .env.example .env  # (if example exists)
+# OR create a new .env file
+nano .env
 ```
 
-If you deploy on **Vercel**, you typically **do not commit any `.env` file**. Instead, set the same variables in **Vercel → Project → Settings → Environment Variables** (and make sure the Vercel project root is `frontend/`).
+**Add your private key** (only if you're deploying contracts or running the bot):
+```bash
+DEPLOYER_PRIVATE_KEY=0xYourPrivateKeyHere
+```
+
+**Need more details?** See the **[Environment Variables Guide](Docs/configuration/environment-variables.md)** for:
+- Complete variable reference
+- .env file locations and precedence rules
+- Bot configuration patterns
+- Vercel deployment setup
 
 ### Step 2: Start the App
 
+⚠️ **Important:** You must run the frontend from the `frontend/` directory!
+
 ```bash
+cd frontend  # ← Critical! Don't skip this
 npm run dev
 ```
 
@@ -314,35 +330,43 @@ You can create price feeds from **external chains** (Ethereum, Arbitrum, Base, e
 
 ### Supported Source Chains
 
-| Chain | Method | Status |
-|-------|--------|--------|
-| Flare | Direct state (`slot0()`) | ✅ Active |
-| Coston2 | Direct state (`slot0()`) | ✅ Active |
-| Ethereum | FDC Attestation | ✅ Active |
-| Sepolia | FDC Attestation | ✅ Active |
-| Arbitrum | FDC via Relay | ✅ Active |
-| Base, OP, Polygon | FDC via Relay | ✅ Active |
+You can create price feeds from **20+ EVM chains**:
+
+| Category | Chains | Trust Model | Gas Required |
+|----------|--------|-------------|--------------|
+| **Direct** (Trustless FDC) | Flare, Ethereum, Coston2, Sepolia | Fully trustless | Source chain native token |
+| **Relay** (Bot-assisted) | Arbitrum, Base, Optimism, Polygon, Avalanche, BNB, Fantom, zkSync, Linea, Scroll, Mantle, Blast, Gnosis, Celo, Polygon zkEVM, Mode, Zora | Bot + FDC | FLR only (bot pays source gas) |
+
+**See the [Supported Chains Reference](Docs/configuration/supported-chains.md) for:**
+- Complete chain list with IDs and RPCs
+- Gas requirements per chain
+- Finding pools on each chain
+- Network switching guide
 
 ---
 
 ## Troubleshooting
 
-### "Pool not enabled"
-The app will prompt you to enable the pool — just confirm the transaction.
+### Common Issues
 
-### "Update interval not elapsed"
-You need to wait 5 minutes between updates. This is to prevent spam.
+| Problem | Solution |
+|---------|----------|
+| **"npm run dev doesn't work"** | You must run from `frontend/` directory — see [Directory Structure](Docs/configuration/directory-structure.md) |
+| **"Pool not enabled"** | The app will prompt you to enable the pool — just confirm the transaction |
+| **"Update interval not elapsed"** | Wait 5 minutes between updates (prevents spam) |
+| **"Low balance" warning** | You need FLR for gas + attestation fees (~1 FLR per update) |
+| **"Attestation taking forever"** | FDC attestations take 90-180 seconds — progress bar shows status |
+| **"Bot not discovering feeds"** | Check env var naming pattern — see [Environment Variables Guide](Docs/configuration/environment-variables.md#feed-discovery-required) |
+| **"Network mismatch" (Ethereum feeds)** | Direct chains require network switching — confirm in wallet when prompted |
+| **"RPC request failed"** | Try custom RPC endpoint — see [Supported Chains](Docs/configuration/supported-chains.md#custom-rpc-endpoints) |
 
-### "Low balance" warning
-You need FLR for gas + attestation fees. Buy FLR tokens to use the app.
+### Still stuck?
 
-### "Attestation taking forever"
-FDC attestations take 90-180 seconds. The progress bar shows you where you are. If it's stuck, check your internet connection.
-
-### Something else broken?
-1. Check the browser console (F12 → Console tab) for errors
-2. Copy `CODEBASE_CONTEXT.md` into your AI assistant and describe the problem
-3. Open an issue on GitHub
+1. Check browser console (F12 → Console tab) for errors
+2. Read the **[Environment Variables Guide](Docs/configuration/environment-variables.md)**
+3. Check the **[Directory Structure Guide](Docs/configuration/directory-structure.md)**
+4. Copy `CODEBASE_CONTEXT.md` into your AI assistant and describe the problem
+5. Open an issue on GitHub
 
 ---
 
@@ -368,8 +392,13 @@ flare-custom-feeds-toolkit/
 
 This codebase is designed to be AI-friendly:
 
-- **`CODEBASE_CONTEXT.md`** — Technical overview of contracts, data flow, and architecture. Feed this to your AI assistant for better help.
-- **`frontend/CROSSCHAIN_CONTEXT.md`** — Deep dive into cross-chain implementation details.
+- **[Environment Variables Guide](Docs/configuration/environment-variables.md)** — Complete .env reference with bot patterns
+- **[Directory Structure Guide](Docs/configuration/directory-structure.md)** — Execution context and file locations
+- **[Supported Chains Reference](Docs/configuration/supported-chains.md)** — Multi-chain configuration
+- **`CODEBASE_CONTEXT.md`** — Technical overview of contracts, data flow, and architecture
+- **`frontend/CROSSCHAIN_CONTEXT.md`** — Deep dive into cross-chain implementation details
+
+**Pro tip:** Feed `CODEBASE_CONTEXT.md` to your AI assistant for better help with complex questions.
 
 ---
 

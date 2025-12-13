@@ -121,6 +121,18 @@ function getRequiredConfirmations(chainId: number): number {
   return 1; // Flare + other direct test cases
 }
 
+/**
+ * Get the base URL for API requests.
+ * On Vercel, uses VERCEL_URL. Otherwise uses NEXT_PUBLIC_APP_URL or localhost.
+ */
+function getApiBaseUrl(): string {
+  return (
+    process.env.NEXT_PUBLIC_APP_URL ||
+    (process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : null) ||
+    'http://localhost:3000'
+  );
+}
+
 const CUSTOM_FEED_ABI = parseAbi([
   'function updateFromProof((bytes32[] merkleProof, (bytes32 attestationType, bytes32 sourceId, uint64 votingRound, uint64 lowestUsedTimestamp, (bytes32 transactionHash, uint16 requiredConfirmations, bool provideInput, bool listEvents, uint32[] logIndices) requestBody, (uint64 blockNumber, uint64 timestamp, address sourceAddress, bool isDeployment, address receivingAddress, uint256 value, bytes input, uint8 status, (uint32 logIndex, address emitterAddress, bytes32[] topics, bytes data, bool removed)[] events) responseBody) data) _proof) external',
   'function updateFromNativePool() external',
@@ -355,7 +367,7 @@ export class BotService {
 
   private async loadFeeds(): Promise<void> {
     try {
-      const baseUrl = process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000';
+      const baseUrl = getApiBaseUrl();
       // Pass storageMode as query param so API knows which backend to use
       const storageModeParam = this.config.storageMode ? `?storageMode=${this.config.storageMode}` : '';
       const response = await fetch(`${baseUrl}/api/feeds${storageModeParam}`);
@@ -692,7 +704,7 @@ export class BotService {
     // Step 1: Fetch price from source chain via API
     this.log('info', `  📡 Fetching price from ${sourceChain?.name}...`);
 
-    const priceResponse = await fetch(`${process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000'}/api/relay/fetch-price`, {
+    const priceResponse = await fetch(`${getApiBaseUrl()}/api/relay/fetch-price`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
@@ -804,7 +816,7 @@ export class BotService {
 
     while (Date.now() - startWait < maxWaitMs) {
       attempt++;
-      const prepareResponse = await fetch(`${process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000'}/api/fdc/prepare-request`, {
+      const prepareResponse = await fetch(`${getApiBaseUrl()}/api/fdc/prepare-request`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -904,7 +916,7 @@ export class BotService {
       args: [block.timestamp],
     });
 
-    const proofResponse = await fetch(`${process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000'}/api/fdc/get-proof`, {
+    const proofResponse = await fetch(`${getApiBaseUrl()}/api/fdc/get-proof`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
