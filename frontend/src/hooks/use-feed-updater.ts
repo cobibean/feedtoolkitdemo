@@ -312,6 +312,31 @@ export function useFeedUpdater(): UseFeedUpdaterResult {
     setCancelled(true);
   }, []);
 
+  const waitForChainId = useCallback(
+    async (targetChainId: number, timeoutMs: number = 15_000) => {
+      if (!publicClient) return;
+      const start = Date.now();
+      const targetChain = getSourceChainById(targetChainId);
+      const targetName = targetChain?.name || `chain ${targetChainId}`;
+
+      while (Date.now() - start < timeoutMs) {
+        try {
+          const currentChainId = await publicClient.getChainId();
+          if (currentChainId === targetChainId) {
+            return;
+          }
+        } catch {
+          // Ignore temporary read failures while waiting for the wallet to settle.
+        }
+
+        await new Promise(resolve => setTimeout(resolve, 500));
+      }
+
+      throw new Error(`Timed out waiting for wallet to switch to ${targetName}. Please switch networks manually.`);
+    },
+    [publicClient]
+  );
+
   /**
    * FLARE_NATIVE PATH: Read price directly from on-chain state
    * 
@@ -377,7 +402,7 @@ export function useFeedUpdater(): UseFeedUpdaterResult {
       if (chainId !== originChainId) {
         updateProgress('switching-to-source', `Switching to ${chainName} for native update...`);
         await switchChainAsync({ chainId: originChainId });
-        await new Promise(resolve => setTimeout(resolve, 1000));
+        await waitForChainId(originChainId);
       }
 
       const nativeWalletClient = await getWalletClient(wagmiConfig, { chainId: originChainId });
@@ -562,7 +587,7 @@ export function useFeedUpdater(): UseFeedUpdaterResult {
           updateProgress('switching-to-flare', 'Switching to Flare for relay...');
           try {
             await switchChainAsync({ chainId: 14 });
-            await new Promise(resolve => setTimeout(resolve, 1000));
+            await waitForChainId(14);
           } catch (switchError) {
             if ((switchError as Error).message?.includes('rejected')) {
               throw new Error('Network switch to Flare rejected.');
@@ -713,7 +738,7 @@ export function useFeedUpdater(): UseFeedUpdaterResult {
             updateProgress('switching-to-flare', 'Switching to Flare for attestation...');
             try {
               await switchChainAsync({ chainId: 14 });
-              await new Promise(resolve => setTimeout(resolve, 1000));
+            await waitForChainId(14);
             } catch (switchError) {
               if ((switchError as Error).message?.includes('rejected')) {
                 throw new Error('Network switch to Flare rejected. Please switch manually and try again.');
@@ -731,8 +756,7 @@ export function useFeedUpdater(): UseFeedUpdaterResult {
           try {
             await switchChainAsync({ chainId: sourceChainId });
             currentChainId = sourceChainId;
-            // Small delay to let wallet client update
-            await new Promise(resolve => setTimeout(resolve, 1000));
+            await waitForChainId(sourceChainId);
           } catch (switchError) {
             if ((switchError as Error).message?.includes('rejected')) {
               throw new Error('Network switch rejected. Please switch manually and try again.');
@@ -839,7 +863,7 @@ export function useFeedUpdater(): UseFeedUpdaterResult {
           
           try {
             await switchChainAsync({ chainId: 14 });
-            await new Promise(resolve => setTimeout(resolve, 1000));
+            await waitForChainId(14);
           } catch (switchError) {
             if ((switchError as Error).message?.includes('rejected')) {
               throw new Error('Network switch to Flare rejected. Please switch manually and try again.');
