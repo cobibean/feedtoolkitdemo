@@ -15,12 +15,53 @@
 import axios from "axios";
 import { ethers } from "ethers";
 
-// FDC Contract Addresses (Flare Mainnet)
+// ============================================================
+// NETWORK CONFIG (Flare Mainnet)
+// ============================================================
+
+// FDC contract addresses (Flare mainnet). If you need Coston2 support, wire the
+// corresponding addresses and pass `flareChainId: 114` to `getProofForTransaction`.
 const CONTRACT_REGISTRY = "0xaD67FE66660Fb8dFE9d6b1b4240d8650e30F6019";
 const FDC_HUB = "0xc25c749DC27Efb1864Cb3DADa8845B7687eB2d44";
 const RELAY = "0x57a4c3676d08Aa5d15410b5A6A80fBcEF72f3F45";
-const DA_LAYER_API = "https://flr-data-availability.flare.network";
-const VERIFIER_URL = "https://fdc-verifiers-mainnet.flare.network/verifier/flr/EVMTransaction/prepareRequest";
+
+const DA_LAYER_APIS = {
+  14: "https://flr-data-availability.flare.network",
+  114: "https://ctn2-data-availability.flare.network",
+};
+
+const VERIFIER_BASE_URLS = {
+  14: "https://fdc-verifiers-mainnet.flare.network/verifier",
+  114: "https://fdc-verifiers-testnet.flare.network/verifier",
+};
+
+// Source chain configuration for EVMTransaction attestations
+const SOURCE_CHAIN_CONFIG = {
+  // Flare mainnet txs
+  14: {
+    path: "flr",
+    sourceId: "0x464c520000000000000000000000000000000000000000000000000000000000", // "FLR"
+  },
+  // Ethereum mainnet txs
+  1: {
+    path: "eth",
+    sourceId: "0x4554480000000000000000000000000000000000000000000000000000000000", // "ETH"
+  },
+  // Sepolia txs
+  11155111: {
+    path: "sepolia",
+    sourceId: "0x7465737445544800000000000000000000000000000000000000000000000000", // "testETH"
+  },
+  // Coston2 (legacy)
+  114: {
+    path: "c2flr",
+    sourceId: "0x7465737443324652000000000000000000000000000000000000000000000000", // "testC2FR"
+  },
+};
+
+const EVM_TRANSACTION_ATTESTATION_TYPE =
+  "0x45564d5472616e73616374696f6e000000000000000000000000000000000000"; // "EVMTransaction"
+
 const VERIFIER_API_KEY = process.env.FDC_VERIFIER_API_KEY || "00000000-0000-0000-0000-000000000000"; // Public key
 
 // ABIs
@@ -42,21 +83,44 @@ const FEE_CONFIG_ABI = [
   "function getRequestFee(bytes calldata _data) external view returns (uint256)",
 ];
 
+function getRequiredConfirmations(sourceChainId) {
+  if (sourceChainId === 1) return 12; // ETH mainnet
+  if (sourceChainId === 11155111) return 6; // Sepolia
+  return 1; // Flare + local/test usage
+}
+
 /**
  * Prepare EVMTransaction attestation request using Flare's verifier service
  * @param {string} transactionHash - Transaction hash to attest
+ * @param {{ flareChainId?: number, sourceChainId?: number, requiredConfirmations?: number }} [options]
  * @returns {Promise<string>} ABI-encoded attestation request with MIC
  */
-export async function prepareAttestationRequest(transactionHash) {
+export async function prepareAttestationRequest(transactionHash, options = {}) {
+  const flareChainId = options.flareChainId ?? 14;
+  const sourceChainId = options.sourceChainId ?? 14;
+  const sourceConfig = SOURCE_CHAIN_CONFIG[sourceChainId];
+
+  if (!sourceConfig) {
+    throw new Error(`Unsupported source chainId for verifier: ${sourceChainId}`);
+  }
+
+  const baseUrl = VERIFIER_BASE_URLS[flareChainId];
+  if (!baseUrl) {
+    throw new Error(`Unsupported Flare chainId for verifier base URL: ${flareChainId}`);
+  }
+
+  const verifierUrl = `${baseUrl}/${sourceConfig.path}/EVMTransaction/prepareRequest`;
+  const requiredConfirmations = options.requiredConfirmations ?? getRequiredConfirmations(sourceChainId);
+
   console.log("  - Preparing request via Flare verifier service...");
 
   // Request body for EVMTransaction per Swagger docs
   const requestJson = {
-    attestationType: "0x45564d5472616e73616374696f6e000000000000000000000000000000000000", // "EVMTransaction"
-    sourceId: "0x464c520000000000000000000000000000000000000000000000000000000000", // "FLR"
+    attestationType: EVM_TRANSACTION_ATTESTATION_TYPE,
+    sourceId: sourceConfig.sourceId,
     requestBody: {
       transactionHash: transactionHash,
-      requiredConfirmations: "1",
+      requiredConfirmations: String(requiredConfirmations),
       provideInput: false,
       listEvents: true,
       logIndices: [] // Empty array = all events
@@ -64,7 +128,7 @@ export async function prepareAttestationRequest(transactionHash) {
   };
 
   try {
-    const response = await axios.post(VERIFIER_URL, requestJson, {
+    const response = await axios.post(verifierUrl, requestJson, {
       headers: {
         "X-API-KEY": VERIFIER_API_KEY,
         "Content-Type": "application/json",
@@ -89,16 +153,17 @@ export async function prepareAttestationRequest(transactionHash) {
  * @param {ethers.Provider} provider - Ethers provider
  * @param {ethers.Wallet} wallet - Wallet for signing
  * @param {string} transactionHash - Transaction to attest
+ * @param {{ flareChainId?: number, sourceChainId?: number, requiredConfirmations?: number }} [options]
  * @returns {Promise<{votingRoundId: number, requestBytes: string}>}
  */
-export async function requestAttestation(provider, wallet, transactionHash) {
+export async function requestAttestation(provider, wallet, transactionHash, options = {}) {
   console.log("📨 Requesting FDC attestation...");
   console.log("  - Transaction:", transactionHash);
 
   const fdcHub = new ethers.Contract(FDC_HUB, FDC_HUB_ABI, wallet);
 
   // Prepare request using verifier service (includes MIC calculation)
-  const requestBytes = await prepareAttestationRequest(transactionHash);
+  const requestBytes = await prepareAttestationRequest(transactionHash, options);
   console.log("  - Request bytes length:", requestBytes.length);
 
   // Get fee from FdcRequestFeeConfigurations via FdcHub
@@ -196,13 +261,20 @@ export async function waitForFinalization(provider, votingRoundId, maxWaitSecond
  * Retrieve proof from DA Layer API
  * @param {number} votingRoundId - Voting round ID
  * @param {string} requestBytes - Original request bytes
+ * @param {{ flareChainId?: number }} [options]
  * @returns {Promise<object>} Proof object
  */
-export async function retrieveProof(votingRoundId, requestBytes) {
+export async function retrieveProof(votingRoundId, requestBytes, options = {}) {
+  const flareChainId = options.flareChainId ?? 14;
+  const daLayerUrl = DA_LAYER_APIS[flareChainId];
+  if (!daLayerUrl) {
+    throw new Error(`Unsupported Flare chainId for DA Layer: ${flareChainId}`);
+  }
+
   console.log("📥 Retrieving proof from DA Layer...");
   console.log("  - Voting Round:", votingRoundId);
   console.log("  - Request bytes (first 66 chars):", requestBytes.substring(0, 66));
-  console.log("  - API:", DA_LAYER_API);
+  console.log("  - API:", daLayerUrl);
 
   const payload = {
     votingRoundId: Number(votingRoundId),
@@ -213,7 +285,7 @@ export async function retrieveProof(votingRoundId, requestBytes) {
 
   try {
     const response = await axios.post(
-      `${DA_LAYER_API}/api/v1/fdc/proof-by-request-round-raw`,
+      `${daLayerUrl}/api/v1/fdc/proof-by-request-round-raw`,
       payload,
       {
         headers: {
@@ -253,9 +325,18 @@ export async function retrieveProof(votingRoundId, requestBytes) {
  * @param {ethers.Provider} provider - Ethers provider
  * @param {ethers.Wallet} wallet - Wallet for signing
  * @param {string} transactionHash - Transaction to attest
+ * @param {{ flareChainId?: number, sourceChainId?: number, requiredConfirmations?: number }} [options]
  * @returns {Promise<{responseHex: string, merkleProof: string[], fdcRoundId: number, abiEncodedRequest: string, sourceId: string, attestationType: string}>}
  */
-export async function getProofForTransaction(provider, wallet, transactionHash) {
+export async function getProofForTransaction(provider, wallet, transactionHash, options = {}) {
+  const flareChainId = options.flareChainId ?? 14;
+  const sourceChainId = options.sourceChainId ?? 14;
+  const sourceConfig = SOURCE_CHAIN_CONFIG[sourceChainId];
+
+  if (!sourceConfig) {
+    throw new Error(`Unsupported source chainId for proof: ${sourceChainId}`);
+  }
+
   console.log("=".repeat(60));
   console.log("🔐 FDC Attestation Workflow");
   console.log("=".repeat(60));
@@ -265,7 +346,12 @@ export async function getProofForTransaction(provider, wallet, transactionHash) 
   const { votingRoundId, requestBytes } = await requestAttestation(
     provider,
     wallet,
-    transactionHash
+    transactionHash,
+    {
+      flareChainId,
+      sourceChainId,
+      requiredConfirmations: options.requiredConfirmations,
+    }
   );
 
   // Step 2: Wait for finalization
@@ -281,7 +367,7 @@ export async function getProofForTransaction(provider, wallet, transactionHash) 
   console.log();
 
   // Step 3: Retrieve proof
-  const proof = await retrieveProof(votingRoundId, requestBytes);
+  const proof = await retrieveProof(votingRoundId, requestBytes, { flareChainId });
 
   console.log("=".repeat(60));
   console.log("✅ FDC Workflow Complete!");
@@ -293,8 +379,8 @@ export async function getProofForTransaction(provider, wallet, transactionHash) 
     ...proof,
     fdcRoundId: votingRoundId,
     abiEncodedRequest: requestBytes,
-    sourceId: "0x464c520000000000000000000000000000000000000000000000000000000000", // "FLR"
-    attestationType: "0x45564d5472616e73616374696f6e000000000000000000000000000000000000", // "EVMTransaction"
+    sourceId: sourceConfig.sourceId,
+    attestationType: EVM_TRANSACTION_ATTESTATION_TYPE,
   };
 }
 
@@ -303,7 +389,7 @@ export const FDC_CONFIG = {
   CONTRACT_REGISTRY,
   FDC_HUB,
   RELAY,
-  DA_LAYER_API,
-  VERIFIER_URL,
+  DA_LAYER_APIS,
+  VERIFIER_BASE_URLS,
+  SOURCE_CHAIN_CONFIG,
 };
-

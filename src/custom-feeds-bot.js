@@ -16,97 +16,101 @@
  *   BOT_LOG_LEVEL=compact              # Terminal logging: compact|verbose
  *   BOT_LOG_FILE_ENABLED=true          # Enable JSON file logging
  *   BOT_LOG_FILE_DIR=./logs            # Log file directory
- *   PRICE_RECORDER_ADDRESS             # PriceRecorder contract address
  *   DEPLOYER_PRIVATE_KEY               # Wallet private key
  *   FLARE_RPC_URL                      # Flare RPC endpoint
- *   POOL_ADDRESS_<ALIAS>               # Pool addresses (e.g., POOL_ADDRESS_FXRP_USDTO_SPARKDEX)
- *   CUSTOM_FEED_ADDRESS_<ALIAS>        # Feed addresses (e.g., CUSTOM_FEED_ADDRESS_FXRP_USDTO_SPARKDEX)
+ *   BOT_NATIVE_UPDATE_INTERVAL_SECONDS=300    # Min seconds between native updates (optional)
+ *   RPC_URL_<CHAIN_ID>=https://...      # Source chain RPCs (optional, defaults included)
+ *
+ * Per-feed configuration:
+ *   CUSTOM_FEED_ADDRESS_<ALIAS>=0x...    # Feed address on Flare
+ *   POOL_ADDRESS_<ALIAS>=0x...           # Pool address on source chain (optional; bot will verify)
+ *   SOURCE_CHAIN_ID_<ALIAS>=1            # Source chain ID (14=Flare, 1=Ethereum, etc.)
+ *   PRICE_RELAY_ADDRESS_<ALIAS>=0x...    # (Relay feeds) PriceRelay on Flare (optional; bot can read from feed)
+ *   PRICE_RECORDER_ADDRESS_<ALIAS>=0x... # (Direct feeds) PriceRecorder on source chain (optional; bot can read from feed)
  */
 
 import { config } from "dotenv";
 import { ethers } from "ethers";
 import fs from "fs";
 import path from "path";
+import { fileURLToPath } from "url";
 import { getProofForTransaction } from "./fdc-client.js";
 
 // Load .env file (prefer repo root, fallback to frontend/.env)
-const rootEnvPath = path.join(process.cwd(), ".env");
-const frontendEnvPath = path.join(process.cwd(), "frontend", ".env");
-config({ path: fs.existsSync(rootEnvPath) ? rootEnvPath : frontendEnvPath });
+// Use the script location (not CWD) so running from other directories still works.
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+const repoRoot = path.resolve(__dirname, "..");
+
+const candidateEnvPaths = [
+  process.env.DOTENV_CONFIG_PATH,
+  path.join(repoRoot, ".env"),
+  path.join(repoRoot, "frontend", ".env"),
+  path.join(process.cwd(), ".env"),
+  path.join(process.cwd(), "frontend", ".env"),
+].filter(Boolean);
+
+const selectedEnvPath = candidateEnvPaths.find((envPath) => fs.existsSync(envPath));
+if (selectedEnvPath) config({ path: selectedEnvPath });
+else config();
 
 // ============================================================
 // CONFIGURATION
 // ============================================================
 
-// Pool specifications - Add your pools here
-// Each pool needs corresponding POOL_ADDRESS_<ALIAS> and CUSTOM_FEED_ADDRESS_<ALIAS> env vars
-const POOL_SPECS = [
-  // Example pool configurations - uncomment and modify for your pools:
-  // {
-  //   name: "FXRP/USD₮0 (SparkDex)",
-  //   alias: "FXRP_USDTO_SPARKDEX",
-  //   token0Decimals: 6,
-  //   token1Decimals: 6,
-  //   invertPrice: false,
-  // },
-  // {
-  //   name: "WFLR/FXRP (SparkDex)",
-  //   alias: "WFLR_FXRP_SPARKDEX",
-  //   token0Decimals: 18,
-  //   token1Decimals: 6,
-  //   invertPrice: false,
-  // },
-];
-
-// Auto-discover pools from environment variables
-function discoverPoolsFromEnv() {
-  const pools = [];
+// Auto-discover feeds from environment variables
+function discoverFeedsFromEnv() {
+  const feeds = [];
   const envKeys = Object.keys(process.env);
-  
-  // Find all POOL_ADDRESS_* environment variables
-  const poolAddressKeys = envKeys.filter(key => key.startsWith('POOL_ADDRESS_'));
-  
-  for (const key of poolAddressKeys) {
-    const alias = key.replace('POOL_ADDRESS_', '');
-    const poolAddress = process.env[key];
-    const feedAddressKey = `CUSTOM_FEED_ADDRESS_${alias}`;
-    const feedAddress = process.env[feedAddressKey];
-    
-    if (poolAddress && feedAddress) {
-      // Check if we have a spec for this pool, otherwise use defaults
-      const spec = POOL_SPECS.find(s => s.alias === alias) || {
-        name: alias.replace(/_/g, '/').replace(/SPARKDEX|ENOSYS/g, m => ` (${m})`),
-        alias: alias,
-        token0Decimals: 18, // Default - will be overridden if spec exists
-        token1Decimals: 6,
-        invertPrice: false,
-      };
-      
-      pools.push({
-        ...spec,
-        alias,
-        poolAddress,
-        feedAddress,
-        enabled: true,
-      });
-    }
+
+  // Find all CUSTOM_FEED_ADDRESS_* environment variables
+  const feedKeys = envKeys.filter((key) => key.startsWith("CUSTOM_FEED_ADDRESS_"));
+
+  for (const key of feedKeys) {
+    const alias = key.replace("CUSTOM_FEED_ADDRESS_", "");
+    const feedAddress = process.env[key];
+    if (!feedAddress) continue;
+
+    const poolAddress = process.env[`POOL_ADDRESS_${alias}`];
+    const sourceChainIdRaw = process.env[`SOURCE_CHAIN_ID_${alias}`];
+    const priceRelayAddress = process.env[`PRICE_RELAY_ADDRESS_${alias}`];
+    const priceRecorderAddress = process.env[`PRICE_RECORDER_ADDRESS_${alias}`];
+
+    feeds.push({
+      name: alias.replace(/_/g, "/"),
+      alias,
+      feedAddress,
+      poolAddress: poolAddress || null,
+      sourceChainId: sourceChainIdRaw ? parseInt(sourceChainIdRaw) : 14,
+      priceRelayAddress: priceRelayAddress || null,
+      priceRecorderAddress: priceRecorderAddress || null,
+      // Filled during initialization (read from on-chain feed contract)
+      type: "unknown",
+      token0Decimals: null,
+      token1Decimals: null,
+      invertPrice: false,
+      onchainPoolAddress: null,
+      onchainRecorderAddress: null,
+      onchainRelayAddress: null,
+      onchainSourceChainId: null,
+    });
   }
-  
-  return pools;
+
+  return feeds;
 }
 
-// Resolve pool configurations
-const POOLS = discoverPoolsFromEnv();
+// Resolve feed configurations
+const FEEDS = discoverFeedsFromEnv();
 
 // Bot configuration
 const CONFIG = {
-  PRICE_RECORDER: process.env.PRICE_RECORDER_ADDRESS,
   RPC_URL: process.env.FLARE_RPC_URL || "https://flare-api.flare.network/ext/bc/C/rpc",
   PRIVATE_KEY: process.env.DEPLOYER_PRIVATE_KEY,
 
   // Timing
   CHECK_INTERVAL: parseInt(process.env.BOT_CHECK_INTERVAL_SECONDS || "60") * 1000,
   STATS_INTERVAL: parseInt(process.env.BOT_STATS_INTERVAL_MINUTES || "60") * 60 * 1000,
+  NATIVE_UPDATE_INTERVAL_SECONDS: parseInt(process.env.BOT_NATIVE_UPDATE_INTERVAL_SECONDS || "300"),
 
   // Logging
   LOG_LEVEL: process.env.BOT_LOG_LEVEL || "compact",
@@ -122,7 +126,7 @@ const CONFIG = {
   // Attestation
   MAX_ATTESTATION_RETRIES: 2,
 
-  POOLS,
+  FEEDS,
 };
 
 // ABIs
@@ -137,11 +141,65 @@ const PRICE_RECORDER_ABI = [
 
 const CUSTOM_FEED_ABI = [
   "function updateFromProof((bytes32[] merkleProof,(bytes32 attestationType,bytes32 sourceId,uint64 votingRound,uint64 lowestUsedTimestamp,(bytes32 transactionHash,uint16 requiredConfirmations,bool provideInput,bool listEvents,uint32[] logIndices) requestBody,(uint64 blockNumber,uint64 timestamp,address sourceAddress,bool isDeployment,address receivingAddress,uint256 value,bytes input,uint8 status,(uint32 logIndex,address emitterAddress,bytes32[] topics,bytes data,bool removed)[] events) responseBody) data) _proof) external",
+  "function updateFromNativePool() external",
   "function latestValue() external view returns (uint256)",
   "function lastUpdateTimestamp() external view returns (uint64)",
   "function updateCount() external view returns (uint256)",
   "function acceptingUpdates() external view returns (bool)",
+  "function poolAddress() external view returns (address)",
+  "function token0Decimals() external view returns (uint8)",
+  "function token1Decimals() external view returns (uint8)",
+  "function invertPrice() external view returns (bool)",
+  "function priceRecorderAddress() external view returns (address)",
+  "function priceRelayAddress() external view returns (address)",
+  "function sourceChainId() external view returns (uint256)",
 ];
+
+const PRICE_RELAY_ABI = [
+  "function canRelay(uint256 chainId, address pool) external view returns (bool)",
+  "function relayPrice(uint256 sourceChainId,address poolAddress,uint160 sqrtPriceX96,int24 tick,uint128 liquidity,address token0,address token1,uint256 sourceTimestamp,uint256 sourceBlockNumber) external",
+  "function timeUntilNextRelay(uint256 chainId, address pool) external view returns (uint256)",
+  "function authorizedRelayers(address relayer) external view returns (bool)",
+];
+
+const UNISWAP_V3_POOL_ABI = [
+  "function slot0() external view returns (uint160 sqrtPriceX96,int24 tick,uint16 observationIndex,uint16 observationCardinality,uint16 observationCardinalityNext,uint8 feeProtocol,bool unlocked)",
+  "function liquidity() external view returns (uint128)",
+  "function token0() external view returns (address)",
+  "function token1() external view returns (address)",
+];
+
+// Default RPCs (can be overridden via RPC_URL_<CHAIN_ID>)
+const DEFAULT_RPC_URLS = {
+  1: "https://eth.llamarpc.com",
+  11155111: "https://ethereum-sepolia-rpc.publicnode.com",
+  14: "https://flare-api.flare.network/ext/bc/C/rpc",
+  114: "https://coston2-api.flare.network/ext/bc/C/rpc",
+  42161: "https://arb1.arbitrum.io/rpc",
+  8453: "https://mainnet.base.org",
+  10: "https://mainnet.optimism.io",
+  137: "https://polygon-rpc.com",
+  43114: "https://api.avax.network/ext/bc/C/rpc",
+  56: "https://bsc-dataseed.binance.org",
+  250: "https://rpc.ftm.tools",
+  324: "https://mainnet.era.zksync.io",
+  59144: "https://rpc.linea.build",
+  534352: "https://rpc.scroll.io",
+  5000: "https://rpc.mantle.xyz",
+  81457: "https://rpc.blast.io",
+  100: "https://rpc.gnosischain.com",
+  42220: "https://forno.celo.org",
+  1101: "https://zkevm-rpc.com",
+  34443: "https://mainnet.mode.network",
+  7777777: "https://rpc.zora.energy",
+};
+
+function getRpcUrlForChain(chainId) {
+  const envKey = `RPC_URL_${chainId}`;
+  if (process.env[envKey]) return process.env[envKey];
+  if (chainId === 14) return process.env.FLARE_RPC_URL || DEFAULT_RPC_URLS[14];
+  return DEFAULT_RPC_URLS[chainId];
+}
 
 const RESPONSE_TUPLE_TYPE =
   "tuple(" +
@@ -283,9 +341,11 @@ class CustomFeedsBot {
     this.wallet = null;
 
     // Contracts
-    this.priceRecorder = null;
     this.feedContracts = new Map(); // poolAddress => feedContract
     this.poolConfigsByAddress = new Map(); // poolAddress => poolConfig
+    this.sourceProviders = new Map(); // chainId => provider
+    this.sourceWallets = new Map(); // chainId => wallet (only for tx chains)
+    this.relayContracts = new Map(); // priceRelayAddress => contract
 
     // State
     this.isRunning = false;
@@ -314,9 +374,9 @@ class CustomFeedsBot {
     };
 
     // Initialize per-pool stats
-    config.POOLS.forEach(pool => {
-      this.stats.pools[pool.poolAddress] = {
-        name: pool.name,
+    config.FEEDS.forEach((feed) => {
+      this.stats.pools[feed.alias] = {
+        name: feed.name,
         recordings: 0,
         attestations: 0,
         lastPrice: null,
@@ -330,9 +390,10 @@ class CustomFeedsBot {
     this.logger.terminal("🤖 Initializing Custom Feeds Bot...", "important");
 
     // Validate
-    if (!this.config.PRICE_RECORDER) throw new Error("PRICE_RECORDER_ADDRESS not set");
     if (!this.config.PRIVATE_KEY) throw new Error("DEPLOYER_PRIVATE_KEY not set");
-    if (this.config.POOLS.length === 0) throw new Error("No pools configured. Set POOL_ADDRESS_* and CUSTOM_FEED_ADDRESS_* env vars.");
+    if (this.config.FEEDS.length === 0) {
+      throw new Error("No feeds configured. Set CUSTOM_FEED_ADDRESS_* (and optionally POOL_ADDRESS_*) env vars.");
+    }
 
     // Setup
     this.provider = new ethers.JsonRpcProvider(this.config.RPC_URL);
@@ -350,25 +411,14 @@ class CustomFeedsBot {
     const balance = await this.provider.getBalance(this.wallet.address);
     this.logger.terminal(`💰 Balance: ${ethers.formatEther(balance)} FLR`, "important");
 
-    // Connect to PriceRecorder
-    this.priceRecorder = new ethers.Contract(
-      this.config.PRICE_RECORDER,
-      PRICE_RECORDER_ABI,
-      this.wallet
-    );
-
-    const isRecording = await this.priceRecorder.isRecording();
-    if (!isRecording) throw new Error("PriceRecorder contract is paused!");
-
-    this.logger.terminal(`📋 PriceRecorder: ${this.config.PRICE_RECORDER}`, "important");
-    this.logger.terminal(`📊 Configured pools: ${this.config.POOLS.length}`, "important");
+    this.logger.terminal(`📊 Configured feeds: ${this.config.FEEDS.length}`, "important");
 
     // Connect to feed contracts and verify
     let verifiedCount = 0;
-    for (const pool of this.config.POOLS) {
+    for (const feed of this.config.FEEDS) {
       try {
         // Ensure address is checksummed to avoid ENS lookup
-        const checksummedAddress = ethers.getAddress(pool.feedAddress);
+        const checksummedAddress = ethers.getAddress(feed.feedAddress);
 
         const feedContract = new ethers.Contract(
           checksummedAddress,
@@ -376,23 +426,136 @@ class CustomFeedsBot {
           this.wallet
         );
 
-        const normalizedAddress = pool.poolAddress.toLowerCase();
-        this.feedContracts.set(normalizedAddress, feedContract);
-        this.poolConfigsByAddress.set(normalizedAddress, pool);
-
         // Verify feed is accepting updates
         const accepting = await feedContract.acceptingUpdates();
         if (!accepting) {
-          throw new Error(`Feed is paused for pool ${pool.name}!`);
+          throw new Error(`Feed is paused for ${feed.alias}!`);
         }
+
+        // Read on-chain config for safety + flow detection
+        const [
+          onchainPoolAddress,
+          token0Decimals,
+          token1Decimals,
+          invertPrice,
+        ] = await Promise.all([
+          feedContract.poolAddress(),
+          feedContract.token0Decimals(),
+          feedContract.token1Decimals(),
+          feedContract.invertPrice(),
+        ]);
+
+        if (feed.poolAddress && feed.poolAddress.toLowerCase() !== String(onchainPoolAddress).toLowerCase()) {
+          throw new Error(`POOL_ADDRESS_${feed.alias} does not match feed.poolAddress()`);
+        }
+
+        feed.poolAddress = onchainPoolAddress;
+        feed.onchainPoolAddress = onchainPoolAddress;
+        feed.token0Decimals = Number(token0Decimals);
+        feed.token1Decimals = Number(token1Decimals);
+        feed.invertPrice = Boolean(invertPrice);
+
+        // Detect relay vs direct/native by probing contract-specific getters.
+        let isRelayFeed = false;
+        try {
+          const relayAddr = await feedContract.priceRelayAddress();
+          if (relayAddr && relayAddr !== ethers.ZeroAddress) {
+            isRelayFeed = true;
+            feed.type = "relay";
+            feed.onchainRelayAddress = relayAddr;
+
+            const scid = await feedContract.sourceChainId();
+            feed.onchainSourceChainId = Number(scid);
+            feed.sourceChainId = Number(scid);
+
+            // Optional env override/validation
+            if (feed.priceRelayAddress && feed.priceRelayAddress.toLowerCase() !== String(relayAddr).toLowerCase()) {
+              throw new Error(`PRICE_RELAY_ADDRESS_${feed.alias} does not match feed.priceRelayAddress()`);
+            }
+            feed.priceRelayAddress = relayAddr;
+
+            // Cache PriceRelay contract instance for tx submission
+            if (!this.relayContracts.has(relayAddr.toLowerCase())) {
+              this.relayContracts.set(
+                relayAddr.toLowerCase(),
+                new ethers.Contract(relayAddr, PRICE_RELAY_ABI, this.wallet)
+              );
+            }
+
+            // Source chain provider for off-chain reads
+            const rpcUrl = getRpcUrlForChain(feed.sourceChainId);
+            if (!rpcUrl) {
+              throw new Error(`Missing RPC for source chain ${feed.sourceChainId}. Set RPC_URL_${feed.sourceChainId}.`);
+            }
+            if (!this.sourceProviders.has(feed.sourceChainId)) {
+              this.sourceProviders.set(feed.sourceChainId, new ethers.JsonRpcProvider(rpcUrl));
+            }
+          }
+        } catch {
+          // Not a relay feed (function not present or reverted)
+        }
+
+        if (!isRelayFeed) {
+          // PoolPriceCustomFeed: recorder address 0 => native, non-zero => direct (FDC)
+          let recorderAddr;
+          try {
+            recorderAddr = await feedContract.priceRecorderAddress();
+          } catch (err) {
+            throw new Error(`Unsupported feed contract at ${checksummedAddress}: missing priceRecorderAddress/priceRelayAddress`);
+          }
+
+          feed.onchainRecorderAddress = recorderAddr;
+
+          if (recorderAddr === ethers.ZeroAddress) {
+            feed.type = "native";
+          } else {
+            feed.type = "direct";
+
+            // Optional env override/validation
+            if (feed.priceRecorderAddress && feed.priceRecorderAddress.toLowerCase() !== String(recorderAddr).toLowerCase()) {
+              throw new Error(`PRICE_RECORDER_ADDRESS_${feed.alias} does not match feed.priceRecorderAddress()`);
+            }
+            feed.priceRecorderAddress = recorderAddr;
+
+            // Recorder is deployed on the *source chain* (Flare/Ethereum/etc)
+            const sourceChainId = feed.sourceChainId ?? 14;
+            const rpcUrl = getRpcUrlForChain(sourceChainId);
+            if (!rpcUrl) {
+              throw new Error(`Missing RPC for source chain ${sourceChainId}. Set RPC_URL_${sourceChainId}.`);
+            }
+
+            // Cache provider + wallet for the source chain (used to send recordPrice tx)
+            if (!this.sourceProviders.has(sourceChainId)) {
+              this.sourceProviders.set(sourceChainId, new ethers.JsonRpcProvider(rpcUrl));
+            }
+            if (!this.sourceWallets.has(sourceChainId)) {
+              this.sourceWallets.set(sourceChainId, new ethers.Wallet(this.config.PRIVATE_KEY, this.sourceProviders.get(sourceChainId)));
+            }
+
+            const signer = sourceChainId === 14 ? this.wallet : this.sourceWallets.get(sourceChainId);
+            feed.priceRecorderContract = new ethers.Contract(recorderAddr, PRICE_RECORDER_ABI, signer);
+
+            // Defensive: ensure recorder isn't paused (if contract supports it)
+            try {
+              const isRecording = await feed.priceRecorderContract.isRecording();
+              if (!isRecording) throw new Error("PriceRecorder contract is paused");
+            } catch {
+              // Some recorder variants may not expose isRecording; ignore.
+            }
+          }
+        }
+
+        const normalizedPoolKey = String(feed.poolAddress).toLowerCase();
+        this.feedContracts.set(normalizedPoolKey, feedContract);
+        this.poolConfigsByAddress.set(normalizedPoolKey, feed);
 
         verifiedCount++;
 
         if (this.config.LOG_LEVEL === "verbose") {
-          this.logger.terminal(`   ✅ ${pool.name} [${pool.alias}]`);
+          this.logger.terminal(`   ✅ ${feed.name} [${feed.alias}] (${feed.type})`);
         }
       } catch (error) {
-        this.logger.terminal(`   ❌ Failed to initialize ${pool.name}: ${error.message}`, "error");
+        this.logger.terminal(`   ❌ Failed to initialize ${feed.alias}: ${error.message}`, "error");
         throw error;
       }
     }
@@ -479,13 +642,13 @@ class CustomFeedsBot {
   // Round-robin pool selection
   getNextPoolToProcess() {
     // Try each pool starting from current index
-    for (let i = 0; i < this.config.POOLS.length; i++) {
-      const poolIndex = (this.currentPoolIndex + i) % this.config.POOLS.length;
-      const poolConfig = this.config.POOLS[poolIndex];
+    for (let i = 0; i < this.config.FEEDS.length; i++) {
+      const poolIndex = (this.currentPoolIndex + i) % this.config.FEEDS.length;
+      const poolConfig = this.config.FEEDS[poolIndex];
 
       // Update index for next call
       if (i === 0) {
-        this.currentPoolIndex = (this.currentPoolIndex + 1) % this.config.POOLS.length;
+        this.currentPoolIndex = (this.currentPoolIndex + 1) % this.config.FEEDS.length;
       }
 
       return poolConfig; // Return first pool in rotation
@@ -513,33 +676,21 @@ class CustomFeedsBot {
   // Try to record price for a pool
   async tryRecordPrice(poolConfig) {
     try {
-      // Check if pool can update
-      const canUpdate = await this.priceRecorder.canUpdate(poolConfig.poolAddress);
-
-      if (!canUpdate) {
-        return null; // Not ready yet
-      }
-
-      // Check gas price
-      const feeData = await this.provider.getFeeData();
-      let gasPriceGwei;
-
-      if (feeData.gasPrice) {
-        gasPriceGwei = Number(feeData.gasPrice) / 1e9;
-      } else if (feeData.maxFeePerGas) {
-        gasPriceGwei = Number(feeData.maxFeePerGas) / 1e9;
-      } else {
-        this.logger.terminal("⚠️  Cannot determine gas price, skipping", "warn");
+      if (poolConfig.type === "native") {
+        await this.updateNativeFeed(poolConfig);
         return null;
       }
 
-      if (gasPriceGwei > this.config.MAX_GAS_PRICE_GWEI) {
-        this.logger.terminal(`⚠️  Gas too high (${gasPriceGwei.toFixed(2)} gwei), skipping`, "warn");
-        return null;
+      if (poolConfig.type === "relay") {
+        return await this.relayPriceForFeed(poolConfig);
       }
 
-      // Record price
-      return await this.recordPriceForPool(poolConfig, gasPriceGwei);
+      if (poolConfig.type === "direct") {
+        return await this.recordPriceForDirectFeed(poolConfig);
+      }
+
+      this.logger.terminal(`⚠️  Unknown feed type for ${poolConfig.alias}`, "warn");
+      return null;
 
     } catch (error) {
       this.logger.terminal(`❌ Recording failed for ${poolConfig.name}: ${error.message}`, "error");
@@ -565,12 +716,105 @@ class CustomFeedsBot {
     }
   }
 
-  async recordPriceForPool(poolConfig, gasPriceGwei) {
+  async getGasPriceGwei(provider) {
+    const feeData = await provider.getFeeData();
+
+    if (feeData.gasPrice) return Number(feeData.gasPrice) / 1e9;
+    if (feeData.maxFeePerGas) return Number(feeData.maxFeePerGas) / 1e9;
+    return null;
+  }
+
+  async updateNativeFeed(poolConfig) {
+    const feedContract = this.feedContracts.get(poolConfig.poolAddress.toLowerCase());
+    if (!feedContract) throw new Error(`Feed contract not found for ${poolConfig.alias}`);
+
+    // Enforce a minimum interval client-side (contract does not)
+    const last = await feedContract.lastUpdateTimestamp();
+    const lastTs = Number(last);
+    const now = Math.floor(Date.now() / 1000);
+    if (lastTs && now - lastTs < this.config.NATIVE_UPDATE_INTERVAL_SECONDS) {
+      return;
+    }
+
+    const gasPriceGwei = await this.getGasPriceGwei(this.provider);
+    if (gasPriceGwei === null) {
+      this.logger.terminal("⚠️  Cannot determine gas price, skipping", "warn");
+      return;
+    }
+    if (gasPriceGwei > this.config.MAX_GAS_PRICE_GWEI) {
+      this.logger.terminal(`⚠️  Gas too high (${gasPriceGwei.toFixed(2)} gwei), skipping`, "warn");
+      return;
+    }
+
+    const startTime = Date.now();
+    this.logger.terminal(`⚡ Native update ${poolConfig.name}...`);
+
+    const tx = await feedContract.updateFromNativePool({ gasLimit: 500000 });
+    const receipt = await Promise.race([
+      tx.wait(),
+      new Promise((_, reject) => setTimeout(() => reject(new Error("Transaction timeout")), 300000)),
+    ]);
+
+    this.stats.recording.successful++;
+    this.stats.recording.consecutiveFailures = 0;
+    this.stats.recording.lastTime = Date.now();
+    this.stats.recording.totalGasUsed += receipt.gasUsed;
+
+    const newValue = await feedContract.latestValue();
+    const updateCount = await feedContract.updateCount();
+    const feedValue = (Number(newValue) / 1e6).toFixed(6);
+
+    const poolStat = this.stats.pools[poolConfig.alias];
+    if (poolStat) {
+      poolStat.recordings++;
+      poolStat.lastPrice = feedValue;
+      poolStat.lastRecording = Date.now();
+    }
+
+    this.logger.terminal(`✅ Native updated ${poolConfig.name}: ${feedValue}`, "important");
+    this.logger.logEvent({
+      type: "native_update",
+      pool: poolConfig.name,
+      alias: poolConfig.alias,
+      txHash: tx.hash,
+      blockNumber: receipt.blockNumber,
+      feedValue,
+      updateCount: updateCount.toString(),
+      gasUsed: receipt.gasUsed.toString(),
+      status: "success",
+      duration: Date.now() - startTime,
+    });
+  }
+
+  async recordPriceForDirectFeed(poolConfig) {
     const startTime = Date.now();
 
-    this.logger.terminal(`🚀 Recording ${poolConfig.name}...`);
+    if (!poolConfig.priceRecorderContract) {
+      throw new Error(`Missing PriceRecorder for direct feed ${poolConfig.alias}`);
+    }
 
-    const tx = await this.priceRecorder.recordPrice(poolConfig.poolAddress, {
+    const sourceChainId = poolConfig.sourceChainId ?? 14;
+    const sourceProvider = sourceChainId === 14 ? this.provider : this.sourceProviders.get(sourceChainId);
+    if (!sourceProvider) {
+      throw new Error(`Missing provider for source chain ${sourceChainId}. Set RPC_URL_${sourceChainId}.`);
+    }
+
+    const canUpdate = await poolConfig.priceRecorderContract.canUpdate(poolConfig.poolAddress);
+    if (!canUpdate) return null;
+
+    const gasPriceGwei = await this.getGasPriceGwei(sourceProvider);
+    if (gasPriceGwei === null) {
+      this.logger.terminal("⚠️  Cannot determine gas price, skipping", "warn");
+      return null;
+    }
+    if (gasPriceGwei > this.config.MAX_GAS_PRICE_GWEI) {
+      this.logger.terminal(`⚠️  Gas too high (${gasPriceGwei.toFixed(2)} gwei), skipping`, "warn");
+      return null;
+    }
+
+    this.logger.terminal(`🚀 Recording ${poolConfig.name} on chain ${sourceChainId}...`);
+
+    const tx = await poolConfig.priceRecorderContract.recordPrice(poolConfig.poolAddress, {
       gasLimit: this.config.GAS_LIMIT,
     });
 
@@ -590,14 +834,15 @@ class CustomFeedsBot {
     const gasUsed = BigInt(receipt.gasUsed);
     const gasPrice = BigInt(receipt.gasPrice || receipt.effectiveGasPrice || 0);
     const gasCost = gasUsed * gasPrice;
-    const costFLR = Number(ethers.formatEther(gasCost));
-    this.stats.recording.totalCostFLR += costFLR;
+    const costNative = Number(ethers.formatEther(gasCost));
+    // Keep legacy counter for Flare-only dashboards; don't mislabel for other chains
+    if (sourceChainId === 14) this.stats.recording.totalCostFLR += costNative;
 
     // Parse price from event
     let recordedPrice = null;
     const event = receipt.logs.find(log => {
       try {
-        const parsed = this.priceRecorder.interface.parseLog(log);
+        const parsed = poolConfig.priceRecorderContract.interface.parseLog(log);
         return parsed?.name === "PriceRecorded";
       } catch {
         return false;
@@ -605,12 +850,12 @@ class CustomFeedsBot {
     });
 
     if (event) {
-      const parsed = this.priceRecorder.interface.parseLog(event);
+      const parsed = poolConfig.priceRecorderContract.interface.parseLog(event);
       recordedPrice = this.calculatePrice(parsed.args.sqrtPriceX96, poolConfig);
     }
 
     // Update pool stats
-    const poolStat = this.stats.pools[poolConfig.poolAddress];
+    const poolStat = this.stats.pools[poolConfig.alias];
     if (poolStat) {
       poolStat.recordings++;
       poolStat.lastPrice = recordedPrice;
@@ -632,7 +877,8 @@ class CustomFeedsBot {
       blockNumber: receipt.blockNumber,
       price: recordedPrice,
       gasUsed: receipt.gasUsed.toString(),
-      gasCost: costFLR.toFixed(6) + " FLR",
+      gasCost: costNative.toFixed(6),
+      chainId: sourceChainId,
       gasPriceGwei: gasPriceGwei.toFixed(2),
       status: "success",
       duration: Date.now() - startTime,
@@ -640,10 +886,138 @@ class CustomFeedsBot {
 
     // Return recording result for immediate attestation
     return {
+      kind: "direct",
       txHash: tx.hash,
       poolConfig,
       blockNumber: receipt.blockNumber,
       price: recordedPrice,
+    };
+  }
+
+  async relayPriceForFeed(poolConfig) {
+    const startTime = Date.now();
+
+    if (!poolConfig.priceRelayAddress) {
+      throw new Error(`Missing PriceRelay address for relay feed ${poolConfig.alias}`);
+    }
+
+    const relay = this.relayContracts.get(poolConfig.priceRelayAddress.toLowerCase());
+    if (!relay) {
+      throw new Error(`PriceRelay contract not initialized for ${poolConfig.priceRelayAddress}`);
+    }
+
+    const canRelay = await relay.canRelay(BigInt(poolConfig.sourceChainId), poolConfig.poolAddress);
+    if (!canRelay) return null;
+
+    const sourceProvider = this.sourceProviders.get(poolConfig.sourceChainId);
+    if (!sourceProvider) {
+      throw new Error(`Missing provider for relay source chain ${poolConfig.sourceChainId}. Set RPC_URL_${poolConfig.sourceChainId}.`);
+    }
+
+    const pool = new ethers.Contract(poolConfig.poolAddress, UNISWAP_V3_POOL_ABI, sourceProvider);
+    const sourceBlockNumber = await sourceProvider.getBlockNumber();
+
+    const [slot0, liquidity, token0, token1, sourceBlock] = await Promise.all([
+      pool.slot0(),
+      pool.liquidity(),
+      pool.token0(),
+      pool.token1(),
+      sourceProvider.getBlock(sourceBlockNumber),
+    ]);
+
+    const sqrtPriceX96 = slot0[0];
+    const tick = slot0[1];
+    const unlocked = slot0[6];
+    if (!unlocked) return null;
+
+    const sourceTimestampRaw = Number(sourceBlock.timestamp);
+    let sourceTimestamp = sourceTimestampRaw;
+    let sourceTimestampClamped = false;
+
+    // Clamp timestamp so PriceRelay won't revert due to cross-chain clock skew
+    try {
+      const flareBlock = await this.provider.getBlock("latest");
+      const flareNow = Number(flareBlock.timestamp);
+      const allowedMax = flareNow + 600;
+      if (sourceTimestamp > allowedMax) {
+        sourceTimestamp = allowedMax;
+        sourceTimestampClamped = true;
+      }
+    } catch {
+      // Keep raw source timestamp; relay may revert but we avoid masking errors.
+    }
+
+    const gasPriceGwei = await this.getGasPriceGwei(this.provider);
+    if (gasPriceGwei === null) {
+      this.logger.terminal("⚠️  Cannot determine gas price, skipping", "warn");
+      return null;
+    }
+    if (gasPriceGwei > this.config.MAX_GAS_PRICE_GWEI) {
+      this.logger.terminal(`⚠️  Gas too high (${gasPriceGwei.toFixed(2)} gwei), skipping`, "warn");
+      return null;
+    }
+
+    this.logger.terminal(`📤 Relaying ${poolConfig.name} (chain ${poolConfig.sourceChainId} → Flare)...`);
+    if (sourceTimestampClamped && this.config.LOG_LEVEL === "verbose") {
+      this.logger.terminal(`   ⏱️  Timestamp clamped: ${sourceTimestampRaw} → ${sourceTimestamp}`, "warn");
+    }
+
+    const tx = await relay.relayPrice(
+      BigInt(poolConfig.sourceChainId),
+      poolConfig.poolAddress,
+      sqrtPriceX96,
+      tick,
+      liquidity,
+      token0,
+      token1,
+      BigInt(sourceTimestamp),
+      BigInt(sourceBlockNumber),
+      { gasLimit: 800000 }
+    );
+
+    const receipt = await Promise.race([
+      tx.wait(),
+      new Promise((_, reject) => setTimeout(() => reject(new Error("Transaction timeout")), 300000)),
+    ]);
+
+    this.stats.recording.successful++;
+    this.stats.recording.consecutiveFailures = 0;
+    this.stats.recording.lastTime = Date.now();
+    this.stats.recording.totalGasUsed += receipt.gasUsed;
+
+    const relayedPrice = this.calculatePrice(sqrtPriceX96, poolConfig);
+
+    const poolStat = this.stats.pools[poolConfig.alias];
+    if (poolStat) {
+      poolStat.recordings++;
+      poolStat.lastPrice = relayedPrice;
+      poolStat.lastRecording = Date.now();
+    }
+
+    this.logger.terminal(`✅ Relayed ${poolConfig.name}: ${relayedPrice}`, "important");
+    this.logger.logEvent({
+      type: "relay",
+      pool: poolConfig.name,
+      alias: poolConfig.alias,
+      txHash: tx.hash,
+      blockNumber: receipt.blockNumber,
+      price: relayedPrice,
+      chainId: poolConfig.sourceChainId,
+      sourceBlockNumber,
+      sourceTimestamp,
+      sourceTimestampRaw,
+      sourceTimestampClamped,
+      gasUsed: receipt.gasUsed.toString(),
+      status: "success",
+      duration: Date.now() - startTime,
+    });
+
+    return {
+      kind: "relay",
+      txHash: tx.hash,
+      poolConfig,
+      blockNumber: receipt.blockNumber,
+      price: relayedPrice,
     };
   }
 
@@ -680,7 +1054,7 @@ class CustomFeedsBot {
 
   // Try to attest a recorded price
   async tryAttest(recordingResult) {
-    const { txHash, poolConfig, blockNumber, price } = recordingResult;
+    const { txHash, poolConfig, blockNumber, price, kind } = recordingResult;
     const startTime = Date.now();
 
     this.logger.terminal(`📤 Attesting ${poolConfig.name}...`);
@@ -689,7 +1063,10 @@ class CustomFeedsBot {
     for (let attempt = 0; attempt <= this.config.MAX_ATTESTATION_RETRIES; attempt++) {
       try {
         // Get FDC proof
-        const proof = await getProofForTransaction(this.provider, this.wallet, txHash);
+        const sourceChainIdForProof = kind === "direct" ? (poolConfig.sourceChainId ?? 14) : 14;
+        const proof = await getProofForTransaction(this.provider, this.wallet, txHash, {
+          sourceChainId: sourceChainIdForProof,
+        });
 
         // Format proof
         const proofStruct = this.formatProofForContract(proof);
@@ -716,7 +1093,7 @@ class CustomFeedsBot {
         this.stats.attestation.totalTime += duration;
         this.stats.attestation.totalFDCFees += 1.0;
 
-        const poolStat = this.stats.pools[poolConfig.poolAddress];
+        const poolStat = this.stats.pools[poolConfig.alias];
         if (poolStat) {
           poolStat.attestations++;
           poolStat.lastAttestation = Date.now();
@@ -743,6 +1120,8 @@ class CustomFeedsBot {
           status: "success",
           retryCount: attempt,
           fdcRoundId: proof.fdcRoundId,
+          proofSourceChainId: sourceChainIdForProof,
+          kind,
         });
 
         return; // Success, exit retry loop
@@ -841,13 +1220,13 @@ class CustomFeedsBot {
   printHourlyStats() {
     const uptimeMinutes = Math.floor((Date.now() - this.stats.startTime) / 60000);
 
-    const totalCost = this.stats.recording.totalCostFLR + this.stats.attestation.totalFDCFees;
+    const totalCostFlare = this.stats.recording.totalCostFLR + this.stats.attestation.totalFDCFees;
     const stats = {
       uptime: uptimeMinutes,
       recordings: this.stats.recording.successful,
       attestations: this.stats.attestation.successful,
       gasUsed: this.stats.recording.totalGasUsed.toString(),
-      totalCost: totalCost.toFixed(6) + " FLR",
+      totalCost: totalCostFlare.toFixed(6) + " FLR (Flare-side only)",
     };
 
     this.logger.terminal("📊 Hourly Stats:", "important");
@@ -869,7 +1248,7 @@ class CustomFeedsBot {
         successful: this.stats.recording.successful,
         failed: this.stats.recording.failed,
         avgGasUsed,
-        gasCost: this.stats.recording.totalCostFLR.toFixed(6) + " FLR",
+        gasCost: this.stats.recording.totalCostFLR.toFixed(6) + " FLR (Flare-side only)",
       },
       attestation: {
         successful: this.stats.attestation.successful,
@@ -879,7 +1258,7 @@ class CustomFeedsBot {
           : 0,
         fdcFees: this.stats.attestation.totalFDCFees.toFixed(1) + " FLR",
       },
-      totalCost: totalCostFinal.toFixed(6) + " FLR",
+      totalCost: totalCostFinal.toFixed(6) + " FLR (Flare-side only)",
       pools: this.stats.pools,
     };
 
@@ -890,6 +1269,7 @@ class CustomFeedsBot {
     this.logger.terminal(`Total Recordings: ${finalStats.recording.successful}`, "important");
     this.logger.terminal(`Total Attestations: ${finalStats.attestation.successful}`, "important");
     this.logger.terminal(`Total Cost: ${finalStats.totalCost} (Gas: ${finalStats.recording.gasCost} + FDC Fees: ${finalStats.attestation.fdcFees})`, "important");
+    this.logger.terminal(`Note: Source-chain gas (e.g., ETH for recordPrice) is not included in these totals.`, "important");
     this.logger.terminal("=".repeat(60), "important");
 
     this.logger.logFinalStats(finalStats);
@@ -933,4 +1313,3 @@ main().catch(error => {
   console.error(error);
   process.exit(1);
 });
-

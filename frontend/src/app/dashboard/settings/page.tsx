@@ -10,7 +10,6 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { useFeeds } from '@/context/feeds-context';
 import { useStorageMode, type StorageMode } from '@/context/storage-mode-context';
-import { useChainId } from 'wagmi';
 import { toast } from 'sonner';
 import { 
   Copy, 
@@ -25,11 +24,11 @@ import {
   HardDrive
 } from 'lucide-react';
 import Link from 'next/link';
-import type { NetworkId, StoredFeed, StoredRecorder } from '@/lib/types';
+import type { StoredFeed } from '@/lib/types';
+import { getChainById } from '@/lib/chains';
 
 function generateBotEnvConfig(
   feeds: StoredFeed[],
-  recorders: StoredRecorder[],
   privateKeyPlaceholder: boolean = true
 ): string {
   const lines: string[] = [
@@ -44,51 +43,82 @@ function generateBotEnvConfig(
       ? 'DEPLOYER_PRIVATE_KEY=0x_YOUR_PRIVATE_KEY_HERE'
       : '# DEPLOYER_PRIVATE_KEY already set',
     '',
-    '# Network RPC',
+    '# Flare RPC (feeds live here + FDC runs here)',
     'FLARE_RPC_URL=https://flare-api.flare.network/ext/bc/C/rpc',
     '',
   ];
   
-  // Group recorders by chain
-  const flareRecorders = recorders.filter(r => (r.chainId ?? 14) === 14);
-  if (flareRecorders.length > 0) {
-    lines.push('# Price Recorder Contract (Flare)');
-    lines.push(`PRICE_RECORDER_ADDRESS=${flareRecorders[0].address}`);
+  // Optional source-chain RPCs (bot will fall back to public defaults when known)
+  const uniqueSourceChainIds = Array.from(
+    new Set(
+      feeds
+        .map(f => f.sourceChain?.id)
+        .filter((id): id is number => typeof id === 'number' && id !== 14)
+    )
+  );
+
+  if (uniqueSourceChainIds.length > 0) {
+    lines.push('# Source chain RPCs (required for ETH direct + relay source reads)');
+    for (const chainId of uniqueSourceChainIds) {
+      const chain = getChainById(chainId);
+      if (chain?.rpcUrl) {
+        lines.push(`RPC_URL_${chainId}=${chain.rpcUrl}`);
+      } else {
+        lines.push(`# RPC_URL_${chainId}=https://...`);
+      }
+    }
     lines.push('');
   }
   
   if (feeds.length > 0) {
     // Separate feeds by type
-    const directFeeds = feeds.filter(f => f.sourceChain?.category !== 'relay');
+    const nativeFeeds = feeds.filter(f => f.sourceKind === 'FLARE_NATIVE' && f.sourceChain?.category !== 'relay');
+    const directFeeds = feeds.filter(f => f.sourceChain?.category !== 'relay' && f.sourceKind !== 'FLARE_NATIVE');
     const relayFeeds = feeds.filter(f => f.sourceChain?.category === 'relay');
     
-    if (directFeeds.length > 0) {
-      lines.push('# Direct Feeds (Flare, Ethereum)');
-      lines.push('# Format: POOL_ADDRESS_<ALIAS> and CUSTOM_FEED_ADDRESS_<ALIAS>');
+    if (nativeFeeds.length > 0) {
+      lines.push('# Native Feeds (Flare/Coston2): on-chain slot0() -> updateFromNativePool()');
       lines.push('');
       
-      for (const feed of directFeeds) {
-        const sourceChainName = feed.sourceChain?.name || 'Flare';
-        lines.push(`# ${feed.alias} [${sourceChainName}]`);
-        lines.push(`POOL_ADDRESS_${feed.alias}=${feed.sourcePoolAddress || feed.poolAddress}`);
+      for (const feed of nativeFeeds) {
+        lines.push(`# ${feed.alias} [${feed.sourceChain?.name || 'Flare'}] - NATIVE`);
         lines.push(`CUSTOM_FEED_ADDRESS_${feed.alias}=${feed.customFeedAddress}`);
+        lines.push(`POOL_ADDRESS_${feed.alias}=${feed.sourcePoolAddress || feed.poolAddress}`);
         if (feed.sourceChain && feed.sourceChain.id !== 14) {
           lines.push(`SOURCE_CHAIN_ID_${feed.alias}=${feed.sourceChain.id}`);
         }
         lines.push('');
       }
     }
+
+    if (directFeeds.length > 0) {
+      lines.push('# Direct Feeds (FDC External): recordPrice() on source chain -> FDC -> updateFromProof() on Flare');
+      lines.push('');
+      
+      for (const feed of directFeeds) {
+        const sourceChainName = feed.sourceChain?.name || 'Flare';
+        lines.push(`# ${feed.alias} [${sourceChainName}]`);
+        lines.push(`CUSTOM_FEED_ADDRESS_${feed.alias}=${feed.customFeedAddress}`);
+        lines.push(`POOL_ADDRESS_${feed.alias}=${feed.sourcePoolAddress || feed.poolAddress}`);
+        if (feed.sourceChain && feed.sourceChain.id !== 14) {
+          lines.push(`SOURCE_CHAIN_ID_${feed.alias}=${feed.sourceChain.id}`);
+        }
+        if (feed.priceRecorderAddress) {
+          lines.push(`PRICE_RECORDER_ADDRESS_${feed.alias}=${feed.priceRecorderAddress}`);
+        }
+        lines.push('');
+      }
+    }
     
     if (relayFeeds.length > 0) {
-      lines.push('# Relay Feeds (Arbitrum, Base, Optimism, Polygon)');
-      lines.push('# These use PriceRelay contract instead of PriceRecorder');
+      lines.push('# Relay Feeds: read slot0() on source chain -> relayPrice() on Flare -> FDC -> updateFromProof()');
       lines.push('');
       
       for (const feed of relayFeeds) {
         const sourceChainName = feed.sourceChain?.name || 'Unknown';
         lines.push(`# ${feed.alias} [${sourceChainName}] - RELAY`);
-        lines.push(`POOL_ADDRESS_${feed.alias}=${feed.sourcePoolAddress || feed.poolAddress}`);
         lines.push(`CUSTOM_FEED_ADDRESS_${feed.alias}=${feed.customFeedAddress}`);
+        lines.push(`POOL_ADDRESS_${feed.alias}=${feed.sourcePoolAddress || feed.poolAddress}`);
         lines.push(`SOURCE_CHAIN_ID_${feed.alias}=${feed.sourceChain?.id}`);
         if (feed.priceRelayAddress) {
           lines.push(`PRICE_RELAY_ADDRESS_${feed.alias}=${feed.priceRelayAddress}`);
@@ -100,6 +130,7 @@ function generateBotEnvConfig(
   
   lines.push('# Bot Settings (optional)');
   lines.push('BOT_CHECK_INTERVAL_SECONDS=60');
+  lines.push('BOT_NATIVE_UPDATE_INTERVAL_SECONDS=300');
   lines.push('BOT_LOG_LEVEL=compact');
   lines.push('BOT_LOG_FILE_ENABLED=true');
   lines.push('');
@@ -122,9 +153,8 @@ function downloadEnvFile(content: string, filename: string = 'bot.env'): void {
 }
 
 export default function SettingsPage() {
-  const { feeds, recorders, refresh } = useFeeds();
+  const { feeds, refresh } = useFeeds();
   const { storageMode, setStorageMode } = useStorageMode();
-  const chainId = useChainId();
 
   // All feeds (no network filter since feeds are always on Flare)
   const allFeeds = feeds.filter(f => !f.archivedAt);
@@ -157,8 +187,8 @@ export default function SettingsPage() {
   );
 
   const generatedConfig = useMemo(() => {
-    return generateBotEnvConfig(selectedFeedsArray, recorders);
-  }, [selectedFeedsArray, recorders]);
+    return generateBotEnvConfig(selectedFeedsArray);
+  }, [selectedFeedsArray]);
 
   const copyToClipboard = () => {
     navigator.clipboard.writeText(generatedConfig);
@@ -324,7 +354,12 @@ export default function SettingsPage() {
                     Add your wallet private key to the <code className="px-1 py-0.5 rounded bg-secondary">DEPLOYER_PRIVATE_KEY</code> field
                   </li>
                   <li>
-                    Ensure your wallet has sufficient FLR for gas and FDC attestation fees (~1.01 FLR per update)
+                    Ensure your wallet has sufficient funds for the feeds you selected:
+                    <ul className="list-disc list-inside mt-2 space-y-1 text-muted-foreground">
+                      <li><span className="font-medium">All feeds:</span> FLR for Flare tx gas</li>
+                      <li><span className="font-medium">FDC feeds (ETH + Relay):</span> ~1.0 FLR per update (attestation fee) + proof submission gas</li>
+                      <li><span className="font-medium">ETH direct feeds:</span> ETH on the source chain for <code className="px-1 py-0.5 rounded bg-secondary">recordPrice()</code></li>
+                    </ul>
                   </li>
                   <li>
                     Start the bot with:
@@ -337,8 +372,9 @@ export default function SettingsPage() {
                 <div className="p-4 rounded-lg bg-brand-500/10 border border-brand-500/20">
                   <h4 className="font-semibold text-brand-500 mb-2">💡 Tip</h4>
                   <p className="text-sm text-muted-foreground">
-                    The bot will automatically record prices, request FDC attestations, and submit proofs to update your custom feeds.
-                    Monitor the console output for status updates.
+                    The bot auto-detects each feed type:
+                    Native feeds write on-chain via <code className="px-1 py-0.5 rounded bg-secondary">updateFromNativePool()</code>; FDC feeds request attestations and
+                    submit proofs via <code className="px-1 py-0.5 rounded bg-secondary">updateFromProof()</code>.
                   </p>
                 </div>
               </CardContent>
@@ -482,36 +518,58 @@ NEXT_PUBLIC_APP_URL=https://your-domain.com`}
               <CardHeader>
                 <CardTitle>About Flare Custom Feeds</CardTitle>
                 <CardDescription>
-                  An open-source toolkit for creating FDC-verified price feeds
+                  An open-source toolkit for creating Flare-native and FDC-verified price feeds
                 </CardDescription>
               </CardHeader>
               <CardContent className="space-y-4">
                 <div className="space-y-2">
                   <h4 className="font-semibold">What are Custom Feeds?</h4>
                   <p className="text-sm text-muted-foreground">
-                    Custom feeds allow you to create your own price feeds from Uniswap V3 pools on Flare Network.
-                    Each price update is cryptographically attested through the Flare Data Connector (FDC),
-                    ensuring trustworthy and verifiable price data.
+                    Custom feeds let you deploy your own on-chain price feed contracts on Flare that track Uniswap V3
+                    pools on Flare or other EVM chains. Feeds can be updated either directly from Flare on-chain state
+                    (no FDC needed) or via FDC-attested cross-chain evidence.
                   </p>
                 </div>
 
                 <div className="space-y-2">
                   <h4 className="font-semibold">How It Works</h4>
-                  <ol className="text-sm text-muted-foreground list-decimal list-inside space-y-1">
-                    <li>Deploy a PriceRecorder contract to capture pool prices</li>
-                    <li>Deploy a CustomFeed contract for each pool you want to track</li>
-                    <li>Run the bot to record prices and submit FDC attestations</li>
-                    <li>Your custom feed updates automatically with verified prices</li>
-                  </ol>
+                  <div className="text-sm text-muted-foreground space-y-3">
+                    <div>
+                      <p className="font-medium text-foreground">1) Flare Native (no FDC)</p>
+                      <ol className="list-decimal list-inside space-y-1">
+                        <li>Deploy a native feed for a Flare pool</li>
+                        <li>Updates call <code className="px-1 py-0.5 rounded bg-secondary">updateFromNativePool()</code> which reads <code className="px-1 py-0.5 rounded bg-secondary">slot0()</code> and writes the computed price on-chain</li>
+                      </ol>
+                    </div>
+                    <div>
+                      <p className="font-medium text-foreground">2) ETH Direct (FDC External)</p>
+                      <ol className="list-decimal list-inside space-y-1">
+                        <li>Record the pool state on the source chain via <code className="px-1 py-0.5 rounded bg-secondary">PriceRecorder.recordPrice()</code></li>
+                        <li>Request an FDC EVMTransaction attestation for that tx</li>
+                        <li>Submit the proof to the Flare feed via <code className="px-1 py-0.5 rounded bg-secondary">updateFromProof()</code></li>
+                      </ol>
+                    </div>
+                    <div>
+                      <p className="font-medium text-foreground">3) Relay Chains (FDC via Relay)</p>
+                      <ol className="list-decimal list-inside space-y-1">
+                        <li>Read the pool state off-chain on the source chain</li>
+                        <li>Relay it to Flare via <code className="px-1 py-0.5 rounded bg-secondary">PriceRelay.relayPrice()</code> (Flare tx)</li>
+                        <li>FDC attests the Flare relay tx, then the feed updates via <code className="px-1 py-0.5 rounded bg-secondary">updateFromProof()</code></li>
+                      </ol>
+                    </div>
+                  </div>
                 </div>
 
                 <div className="space-y-2">
                   <h4 className="font-semibold">Cost per Update</h4>
                   <div className="text-sm text-muted-foreground">
-                    <p>~0.002 FLR (record price gas)</p>
+                    <p className="font-medium text-foreground">Flare Native</p>
+                    <p>~Flare tx gas only (no FDC fee)</p>
+                    <p className="font-medium text-foreground mt-2">FDC Feeds (ETH Direct + Relay)</p>
                     <p>~1.0 FLR (FDC attestation fee)</p>
-                    <p>~0.004 FLR (submit proof gas)</p>
-                    <p className="font-semibold mt-1">Total: ~1.01 FLR per update</p>
+                    <p>+ Flare gas for proof submission (and relay tx gas for relay feeds)</p>
+                    <p className="font-medium text-foreground mt-2">ETH Direct (extra)</p>
+                    <p>+ Source chain gas for <code className="px-1 py-0.5 rounded bg-secondary">recordPrice()</code> (paid in ETH)</p>
                   </div>
                 </div>
 
@@ -531,4 +589,3 @@ NEXT_PUBLIC_APP_URL=https://your-domain.com`}
     </div>
   );
 }
-

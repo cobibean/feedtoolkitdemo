@@ -421,31 +421,43 @@ function IntegrationSnippets({ feedAddress }: { feedAddress: string }) {
     setTimeout(() => setCopied(null), 2000);
   };
 
-  const solidityCode = `// Solidity - Read price in your smart contract
+  const solidityCode = `// Solidity - Read the latest price on-chain (view calls)
 interface ICustomFeed {
-    function getCurrentFeed() external view returns (
-        uint256 value,
-        int8 decimals,
-        uint64 timestamp
-    );
+    function latestValue() external view returns (uint256);
+    function lastUpdateTimestamp() external view returns (uint64);
+    function decimals() external pure returns (int8);
 }
 
 ICustomFeed feed = ICustomFeed(${feedAddress});
-(uint256 price, int8 decimals, uint64 timestamp) = feed.getCurrentFeed();`;
+uint256 value = feed.latestValue();              // Price scaled by decimals()
+uint64 timestamp = feed.lastUpdateTimestamp();   // Unix timestamp (seconds)
+int8 decimals = feed.decimals();                 // Always 6 for this feed`;
 
   const jsCode = `// JavaScript/TypeScript - Read with viem
-import { createPublicClient, http } from 'viem';
+import { createPublicClient, http, formatUnits } from 'viem';
 import { flare } from 'viem/chains';
 
-const client = createPublicClient({ chain: flare, transport: http() });
+const FEED_ADDRESS = '${feedAddress}';
 
-const price = await client.readContract({
-  address: '${feedAddress}',
-  abi: [{ name: 'latestValue', type: 'function', inputs: [], outputs: [{ type: 'uint256' }] }],
-  functionName: 'latestValue',
+const client = createPublicClient({
+  chain: flare,
+  transport: http('https://flare-api.flare.network/ext/bc/C/rpc'),
 });
 
-console.log('Price:', Number(price) / 1e6); // 6 decimals`;
+const abi = [
+  { name: 'latestValue', type: 'function', stateMutability: 'view', inputs: [], outputs: [{ type: 'uint256' }] },
+  { name: 'decimals', type: 'function', stateMutability: 'pure', inputs: [], outputs: [{ type: 'int8' }] },
+  { name: 'lastUpdateTimestamp', type: 'function', stateMutability: 'view', inputs: [], outputs: [{ type: 'uint64' }] },
+];
+
+const [value, decimals, timestamp] = await Promise.all([
+  client.readContract({ address: FEED_ADDRESS, abi, functionName: 'latestValue' }),
+  client.readContract({ address: FEED_ADDRESS, abi, functionName: 'decimals' }),
+  client.readContract({ address: FEED_ADDRESS, abi, functionName: 'lastUpdateTimestamp' }),
+]);
+
+console.log('Price:', formatUnits(value, Number(decimals)));
+console.log('Last updated:', new Date(Number(timestamp) * 1000).toISOString());`;
 
   return (
     <div className="space-y-3">
@@ -687,53 +699,56 @@ function UpdateProgressModal({
             </div>
           )}
 
-          {/* FDC Success - show verification evidence */}
-          {isSuccess && !isNativeSuccess && feedAddress && (
+          {/* Success - show verification evidence (FDC flows) + integration snippet (all flows) */}
+          {isSuccess && feedAddress && (
             <div className="border-t pt-4 mt-4">
-              <div className="space-y-3 mb-4">
-                <p className="text-sm font-medium">Verification evidence</p>
-                <div className="grid gap-2">
-                  {progress.attestationTxHash && (
-                    <a
-                      href={getExplorerUrl(14, 'tx', progress.attestationTxHash)}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="w-full"
-                    >
-                      <Button variant="outline" className="w-full justify-between">
-                        View attestation request tx
-                        <ExternalLink className="w-4 h-4" />
-                      </Button>
-                    </a>
-                  )}
-                  {progress.updateTxHash && (
-                    <a
-                      href={getExplorerUrl(14, 'tx', progress.updateTxHash)}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="w-full"
-                    >
-                      <Button variant="outline" className="w-full justify-between">
-                        View feed update tx (proof submitted)
-                        <ExternalLink className="w-4 h-4" />
-                      </Button>
-                    </a>
-                  )}
-                  {progress.relayTxHash && (
-                    <a
-                      href={getExplorerUrl(14, 'tx', progress.relayTxHash)}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="w-full"
-                    >
-                      <Button variant="outline" className="w-full justify-between">
-                        View relay tx
-                        <ExternalLink className="w-4 h-4" />
-                      </Button>
-                    </a>
-                  )}
+              {!isNativeSuccess && (
+                <div className="space-y-3 mb-4">
+                  <p className="text-sm font-medium">Verification evidence</p>
+                  <div className="grid gap-2">
+                    {progress.attestationTxHash && (
+                      <a
+                        href={getExplorerUrl(14, 'tx', progress.attestationTxHash)}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="w-full"
+                      >
+                        <Button variant="outline" className="w-full justify-between">
+                          View attestation request tx
+                          <ExternalLink className="w-4 h-4" />
+                        </Button>
+                      </a>
+                    )}
+                    {progress.updateTxHash && (
+                      <a
+                        href={getExplorerUrl(14, 'tx', progress.updateTxHash)}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="w-full"
+                      >
+                        <Button variant="outline" className="w-full justify-between">
+                          View feed update tx (proof submitted)
+                          <ExternalLink className="w-4 h-4" />
+                        </Button>
+                      </a>
+                    )}
+                    {progress.relayTxHash && (
+                      <a
+                        href={getExplorerUrl(14, 'tx', progress.relayTxHash)}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="w-full"
+                      >
+                        <Button variant="outline" className="w-full justify-between">
+                          View relay tx
+                          <ExternalLink className="w-4 h-4" />
+                        </Button>
+                      </a>
+                    )}
+                  </div>
                 </div>
-              </div>
+              )}
+
               <IntegrationSnippets feedAddress={feedAddress} />
             </div>
           )}
