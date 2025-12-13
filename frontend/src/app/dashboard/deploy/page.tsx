@@ -113,6 +113,39 @@ export default function DeployPage() {
     setSelectedRecorder('');
   }, [sourceChainId]);
 
+  useEffect(() => {
+    if (!chainId) return;
+    if (!isDirectChain(sourceChainId)) return;
+    if (chainId === sourceChainId) return;
+
+    let active = true;
+    const targetName = sourceChain?.name || `chain ${sourceChainId}`;
+    const toastId = `deploy-network-switch-${sourceChainId}`;
+
+    const switchNetwork = async () => {
+      toast.info(`Switching to ${targetName}...`, { id: toastId });
+      try {
+        await switchChainAsync({ chainId: sourceChainId });
+        if (!active) return;
+        toast.success(`Switched to ${targetName}`, { id: toastId });
+      } catch (error) {
+        if (!active) return;
+        const err = error instanceof Error ? error : new Error('Unknown error');
+        if (err.message.includes('rejected')) {
+          toast.error(`Network switch to ${targetName} rejected. Please switch manually.`, { id: `${toastId}-error` });
+        } else {
+          toast.error(`Failed to switch to ${targetName}. Please switch manually.`, { id: `${toastId}-error` });
+        }
+      }
+    };
+
+    switchNetwork();
+
+    return () => {
+      active = false;
+    };
+  }, [chainId, sourceChainId, sourceChain, switchChainAsync]);
+
   const suggestedAlias = useMemo(() => {
     if (!poolInfo?.token0Symbol || !poolInfo?.token1Symbol) return '';
 
