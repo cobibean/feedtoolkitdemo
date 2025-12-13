@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getBotService } from '@/lib/bot-service';
 
+const STORAGE_MODE_COOKIE = 'flare_feeds_storage_mode';
+
 /**
  * POST /api/bot/start
  * Starts the bot service
@@ -26,13 +28,16 @@ export async function POST(request: NextRequest) {
     const body = await request.json().catch(() => ({}));
     const { privateKey, config, feedIds } = body;
 
-    // Update config if provided
-    if (config || feedIds) {
-      botService.updateConfig({
-        ...(config || {}),
-        ...(Array.isArray(feedIds) ? { selectedFeedIds: feedIds } : {}),
-      });
-    }
+    // Capture storage mode from browser cookie so bot knows which backend to use
+    const storageModeValue = request.cookies.get(STORAGE_MODE_COOKIE)?.value;
+    const storageMode: 'local' | 'database' = storageModeValue === 'database' ? 'database' : 'local';
+
+    // Update config if provided, always include storageMode
+    botService.updateConfig({
+      ...(config || {}),
+      ...(Array.isArray(feedIds) ? { selectedFeedIds: feedIds } : {}),
+      storageMode,
+    });
 
     // Start the bot
     const success = await botService.start(privateKey);

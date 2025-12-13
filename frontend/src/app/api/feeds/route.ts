@@ -254,6 +254,13 @@ async function deleteFromSupabase(id: string, type: 'feed' | 'recorder' | 'relay
 }
 
 function getStorageMode(req: NextRequest): 'local' | 'database' {
+  // First check query param (used by server-side bot fetch which can't send cookies)
+  const { searchParams } = new URL(req.url);
+  const queryMode = searchParams.get('storageMode');
+  if (queryMode === 'database' || queryMode === 'local') {
+    return queryMode;
+  }
+  // Fall back to cookie (used by browser requests)
   const value = req.cookies.get(STORAGE_MODE_COOKIE)?.value;
   return value === 'database' ? 'database' : 'local';
 }

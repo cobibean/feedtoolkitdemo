@@ -85,6 +85,11 @@ export interface BotConfig {
    * If empty/undefined, the bot runs all configured feeds.
    */
   selectedFeedIds?: string[];
+  /**
+   * Storage mode for feeds: 'local' (feeds.json) or 'database' (Supabase).
+   * Captured from the user's browser cookie when the bot starts.
+   */
+  storageMode?: 'local' | 'database';
 }
 
 // ============================================================
@@ -222,6 +227,9 @@ export class BotService {
         this.log('warn', 'No feeds configured. Bot will wait for feeds to be added.');
       } else {
         this.log('info', `📊 Loaded ${this.feeds.length} feed(s)`);
+        // Show round-robin order so user can verify
+        const orderList = this.feeds.map((f, i) => `${i + 1}. ${f.alias}`).join(' → ');
+        this.log('info', `🔄 Round-robin order: ${orderList}`);
       }
 
       // Start the main loop
@@ -347,7 +355,10 @@ export class BotService {
 
   private async loadFeeds(): Promise<void> {
     try {
-      const response = await fetch(`${process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000'}/api/feeds`);
+      const baseUrl = process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000';
+      // Pass storageMode as query param so API knows which backend to use
+      const storageModeParam = this.config.storageMode ? `?storageMode=${this.config.storageMode}` : '';
+      const response = await fetch(`${baseUrl}/api/feeds${storageModeParam}`);
       if (response.ok) {
         const data: FeedsData = await response.json();
         const allFeeds = data.feeds || [];
@@ -355,7 +366,10 @@ export class BotService {
 
         const selected = this.config.selectedFeedIds;
         if (Array.isArray(selected) && selected.length > 0) {
-          this.feeds = allFeeds.filter(f => selected.includes(f.id));
+          // Preserve the order of selectedFeedIds (user's selection order for round-robin)
+          this.feeds = selected
+            .map(id => allFeeds.find(f => f.id === id))
+            .filter((f): f is StoredFeed => f !== undefined);
         } else {
           this.feeds = allFeeds;
         }
@@ -535,7 +549,7 @@ export class BotService {
       args: [poolAddress],
     });
 
-    this.log('info', `  ✅ Recorded, tx: ${recordHash.slice(0, 10)}...`, {
+    this.log('info', `  ✅ [${feed.alias}] Recorded, tx: ${recordHash.slice(0, 10)}...`, {
       txHash: recordHash,
       chainId: sourceChainId,
       kind: 'tx',
@@ -563,7 +577,9 @@ export class BotService {
     const result = await this.runFdcFlow(recordHash, feed, sourceChainId, requiredConfirmations);
 
     const duration = Date.now() - startTime;
-    this.log('info', `  ✅ Feed updated in ${Math.floor(duration / 1000)}s`);
+    // Format price for display (6 decimals on-chain)
+    const priceFormatted = result.price ? (Number(result.price) / 1e6).toFixed(6) : 'N/A';
+    this.log('info', `  ✅ Feed updated in ${Math.floor(duration / 1000)}s | Price: ${priceFormatted}`);
 
     this.stats.successfulUpdates++;
     this.stats.totalUpdates++;
@@ -618,7 +634,7 @@ export class BotService {
       functionName: 'updateFromNativePool',
     });
 
-    this.log('info', `  ✅ Native update tx: ${txHash.slice(0, 10)}...`, {
+    this.log('info', `  ✅ [${feed.alias}] Native update tx: ${txHash.slice(0, 10)}...`, {
       txHash,
       chainId: sourceChainId,
       kind: 'tx',
@@ -645,7 +661,9 @@ export class BotService {
     ]);
 
     const duration = Date.now() - startTime;
-    this.log('info', `  ✅ Native feed updated in ${Math.floor(duration / 1000)}s`);
+    // Format price for display (6 decimals on-chain)
+    const priceFormatted = (Number(latestValue) / 1e6).toFixed(6);
+    this.log('info', `  ✅ Native feed updated in ${Math.floor(duration / 1000)}s | Price: ${priceFormatted} | Update #${updateCount}`);
 
     this.stats.successfulUpdates++;
     this.stats.totalUpdates++;
@@ -727,7 +745,7 @@ export class BotService {
       ],
     });
 
-    this.log('info', `  ✅ Relayed, tx: ${relayHash.slice(0, 10)}...`, {
+    this.log('info', `  ✅ [${feed.alias}] Relayed, tx: ${relayHash.slice(0, 10)}...`, {
       txHash: relayHash,
       chainId: 14,
       kind: 'tx',
@@ -741,7 +759,9 @@ export class BotService {
     const result = await this.runFdcFlow(relayHash, feed, 14, 1); // Relay tx is on Flare
 
     const duration = Date.now() - startTime;
-    this.log('info', `  ✅ Relay feed updated in ${Math.floor(duration / 1000)}s`);
+    // Format price for display (6 decimals on-chain)
+    const priceFormatted = result.price ? (Number(result.price) / 1e6).toFixed(6) : 'N/A';
+    this.log('info', `  ✅ Relay feed updated in ${Math.floor(duration / 1000)}s | Price: ${priceFormatted}`);
 
     this.stats.successfulUpdates++;
     this.stats.totalUpdates++;
@@ -854,7 +874,7 @@ export class BotService {
       value: BigInt('1000000000000000000'), // 1 FLR fee
     });
 
-    this.log('info', `  🧾 Attestation tx: ${attestHash.slice(0, 10)}...`, {
+    this.log('info', `  🧾 [${feed.alias}] Attestation tx: ${attestHash.slice(0, 10)}...`, {
       txHash: attestHash,
       chainId: 14,
       kind: 'tx',
@@ -983,7 +1003,7 @@ export class BotService {
       args: [proofStruct],
     });
 
-    this.log('info', `  ✅ Proof submitted, tx: ${submitHash.slice(0, 10)}...`, {
+    this.log('info', `  ✅ [${feed.alias}] Proof submitted, tx: ${submitHash.slice(0, 10)}...`, {
       txHash: submitHash,
       chainId: 14,
       kind: 'tx',
