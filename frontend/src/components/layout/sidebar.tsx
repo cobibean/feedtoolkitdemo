@@ -14,6 +14,7 @@ import {
   AlertTriangle,
   ArrowLeft,
   Bot,
+  CheckCircle2,
 } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -23,6 +24,7 @@ const navItems = [
   { href: '/dashboard', label: 'Overview', icon: Home },
   { href: '/dashboard/deploy', label: 'Deploy', icon: Rocket },
   { href: '/dashboard/monitor', label: 'Monitor', icon: Activity },
+  { href: '/dashboard/verify', label: 'Verify', icon: CheckCircle2 },
   { href: '/dashboard/bot', label: 'Bot', icon: Bot },
   { href: '/dashboard/settings', label: 'Settings', icon: Settings },
 ];

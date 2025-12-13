@@ -4,6 +4,65 @@
 export type NetworkId = 'flare' | 'coston2';
 export type ChainId = 14 | 114;
 
+// ============================================================
+// Source Kind & Method Enums (for reviewer clarity)
+// ============================================================
+
+/**
+ * Determines how a price feed gets its data:
+ * - FLARE_NATIVE: Direct on-chain state reads from a Flare pool (slot0)
+ * - FDC_EXTERNAL: Cross-chain attestation via FDC (external pools)
+ */
+export type SourceKind = 'FLARE_NATIVE' | 'FDC_EXTERNAL';
+
+/**
+ * The specific method used to compute the price:
+ * - SLOT0_SPOT: Direct slot0().sqrtPriceX96 read (instant, on-chain)
+ * - TWAP_OBSERVE: Time-weighted average via observe() (more resistant to manipulation)
+ * - FDC_ATTESTATION: FDC-verified event from PriceRecorder/PriceRelay
+ */
+export type PriceMethod = 'SLOT0_SPOT' | 'TWAP_OBSERVE' | 'FDC_ATTESTATION';
+
+/**
+ * Provenance metadata for a price update - shown to reviewers
+ */
+export interface PriceProvenance {
+  sourceKind: SourceKind;
+  method: PriceMethod;
+  originChain: string;
+  originChainId: number;
+  timestamp: number;
+  blockNumber?: number;
+  sqrtPriceX96?: string;  // Raw value for verification
+  tick?: number;
+}
+
+/**
+ * Result from a direct state read (Flare-native pools)
+ */
+export interface DirectStateResult {
+  value: bigint;           // Price with decimals applied
+  decimals: number;        // Output decimals (typically 6)
+  timestamp: number;       // Block timestamp
+  blockNumber: bigint;     // Block number when read
+  sqrtPriceX96: bigint;    // Raw sqrtPriceX96 from slot0
+  tick: number;            // Tick from slot0
+  provenance: PriceProvenance;
+}
+
+// ============================================================
+// Helper to determine source kind from chain config
+// ============================================================
+
+export function getSourceKind(chainId: number): SourceKind {
+  // Flare and Coston2 are native - use direct state reads
+  if (chainId === 14 || chainId === 114) {
+    return 'FLARE_NATIVE';
+  }
+  // All other chains require FDC attestation
+  return 'FDC_EXTERNAL';
+}
+
 // New cross-chain types
 export type SourceChainCategory = 'direct' | 'relay';
 
@@ -17,6 +76,12 @@ export interface SourceChain {
 export interface StoredFeed {
   id: string;
   alias: string;
+  
+  // ============================================================
+  // Source Kind & Method (v2.1.0+) - for reviewer clarity
+  // ============================================================
+  sourceKind?: SourceKind;    // 'FLARE_NATIVE' | 'FDC_EXTERNAL'
+  method?: PriceMethod;       // 'SLOT0_SPOT' | 'TWAP_OBSERVE' | 'FDC_ATTESTATION'
   
   // Source chain info (NEW - optional for backward compatibility)
   sourceChain?: SourceChain;           // Optional: if missing, infer from network

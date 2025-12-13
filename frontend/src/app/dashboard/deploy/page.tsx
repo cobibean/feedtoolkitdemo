@@ -30,7 +30,8 @@ import {
 import { getExplorerUrl, flare } from '@/lib/wagmi-config';
 import { ChainSelector, ChainBadge } from '@/components/chain';
 import { getChainById, isDirectChain, getChainExplorerUrl } from '@/lib/chains';
-import type { SourceChain } from '@/lib/types';
+import type { SourceChain, SourceKind, PriceMethod } from '@/lib/types';
+import { getSourceKind } from '@/lib/types';
 import Link from 'next/link';
 import { PRICE_RECORDER_ABI, PRICE_RECORDER_BYTECODE } from '@/lib/artifacts/PriceRecorder';
 import { POOL_PRICE_CUSTOM_FEED_ABI, POOL_PRICE_CUSTOM_FEED_BYTECODE, CONTRACT_REGISTRY, CONTRACT_REGISTRY_ABI } from '@/lib/artifacts/PoolPriceCustomFeed';
@@ -449,10 +450,17 @@ export default function DeployPage() {
         category: isRelaySourceChain ? 'relay' : 'direct',
       };
 
+      // Determine sourceKind and method based on chain
+      const feedSourceKind: SourceKind = getSourceKind(sourceChainId);
+      const feedMethod: PriceMethod = feedSourceKind === 'FLARE_NATIVE' ? 'SLOT0_SPOT' : 'FDC_ATTESTATION';
+
       // Build feed data based on direct vs relay chain
       const feedData = {
         id: uuidv4(),
         alias: feedAlias,
+        // v2.1.0 schema fields - for reviewer clarity
+        sourceKind: feedSourceKind,
+        method: feedMethod,
         // v2.0.0 schema fields
         sourceChain: sourceChainData,
         sourcePoolAddress: poolAddress as `0x${string}`,
@@ -775,7 +783,10 @@ export default function DeployPage() {
                 )}
               </div>
               <CardDescription>
-                Pool on {sourceChain?.name} → Feed on Flare ({isRelaySourceChain ? 'Relay + FDC' : 'FDC'} verified)
+                {sourceChainId === 14 || sourceChainId === 114 
+                  ? `Pool on ${sourceChain?.name} → Direct state reads (no FDC needed)`
+                  : `Pool on ${sourceChain?.name} → Feed on Flare (${isRelaySourceChain ? 'Relay + FDC' : 'FDC'} verified)`
+                }
               </CardDescription>
             </CardHeader>
             <CardContent className="space-y-6">

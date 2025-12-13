@@ -4,7 +4,7 @@
   <strong>Built by <a href="https://flareforward.com">Flare Forward</a></strong>
 </p>
 
-> Create your own FDC-verified price feeds from Uniswap V3 pools on Flare — no blockchain experience required!
+> Create custom price feeds from Uniswap V3 pools — **Flare-native pools use direct on-chain state**, external pools use FDC verification!
 
 ---
 
@@ -15,19 +15,35 @@ This toolkit lets you create **custom price feeds** on the Flare Network. Think 
 **Why would you want this?**
 - You need a price feed for a token that isn't covered by Flare's built-in FTSO
 - You're building a DeFi app and need reliable, verified price data
-- You want to experiment with the Flare Data Connector (FDC)
+- You want to experiment with direct on-chain reads or the Flare Data Connector (FDC)
 
 **What makes it special?**
-- All prices are **cryptographically verified** by Flare's FDC — no trust required
+- **Flare-native pools**: Direct on-chain state reads (`slot0()`) — fast and cheap
+- **External pools**: Cryptographically verified by Flare's FDC — trustless cross-chain
 - Works with the standard `IICustomFeed` interface, so it's compatible with FTSO tooling
 - **No command line needed** — deploy everything from a web UI
-- **Cross-chain support** — Create feeds from Ethereum, Flare, and more
+- **Cross-chain support** — Create feeds from Ethereum, Arbitrum, Base, and more
+
+## Two Price Computation Paths
 
 ```
-┌─────────────────┐     ┌─────────────────┐     ┌─────────────────┐     ┌─────────────────┐
-│   V3 Pool       │────▶│  PriceRecorder  │────▶│   FDC System    │────▶│  CustomFeed     │
-│ (sqrtPriceX96)  │     │ (emit event)    │     │ (attest)        │     │ (verified price)│
-└─────────────────┘     └─────────────────┘     └─────────────────┘     └─────────────────┘
+┌──────────────────────────────────────────────────────────────────────────┐
+│                    FLARE-NATIVE POOLS (Direct State)                     │
+├──────────────────────────────────────────────────────────────────────────┤
+│   V3 Pool on Flare  ────────▶  slot0().sqrtPriceX96  ────────▶  Price    │
+│                                   (single RPC call)                      │
+│                                                                          │
+│   ⚡ Fast  |  💰 Cheap  |  🚫 No FDC  |  📊 Direct state read            │
+└──────────────────────────────────────────────────────────────────────────┘
+
+┌──────────────────────────────────────────────────────────────────────────┐
+│                    FDC EXTERNAL POOLS (Cross-chain)                      │
+├──────────────────────────────────────────────────────────────────────────┤
+│   V3 Pool       ────▶  PriceRecorder  ────▶  FDC System  ────▶  CustomFeed│
+│   (external)          (emit event)         (attest)          (verified)  │
+│                                                                          │
+│   🔒 Secure  |  ⏱️ 2-5 min  |  🌐 Cross-chain  |  📝 Event-based         │
+└──────────────────────────────────────────────────────────────────────────┘
 ```
 
 ## 🆘 Need Help? Use the AI Context File!
@@ -49,10 +65,11 @@ This repo includes a special documentation file designed for AI coding assistant
 ## Features
 
 - 🖥️ **Web UI** — Deploy and manage feeds from your browser (no terminal needed!)
-- 🔐 **FDC Verified** — All prices are cryptographically proven
+- ⚡ **Flare-Native Direct Reads** — Pools on Flare use `slot0()` state reads (no FDC overhead)
+- 🔐 **FDC for External Chains** — Cross-chain prices are cryptographically proven
 - 📊 **FTSO Compatible** — Works with standard Flare tooling
 - 🤖 **Automated Updates** — Built-in bot or one-click manual updates
-- 🌐 **Cross-Chain** — Create feeds from Ethereum pools directly
+- 🌐 **Cross-Chain** — Create feeds from Ethereum, Arbitrum, Base, and more
 - 🔧 **Self-Hosted** — Fork it, run it locally, you own everything
 
 ---
@@ -145,14 +162,23 @@ Go to [http://localhost:3000](http://localhost:3000) in your browser.
 
 ## How It Works (Simple Version)
 
+### Flare-Native Pools (Direct State)
 ```
-Your V3 Pool → Records Price → FDC Verifies It → Your Feed Stores It
-     📊              📝              ✅                💾
+Your V3 Pool on Flare  →  slot0() Read  →  Price Computed
+        📊                    ⚡                💾
 ```
+1. **Read**: Direct RPC call to pool's `slot0()` returns `sqrtPriceX96`
+2. **Compute**: Price is calculated using standard Uniswap V3 math
+3. **Use**: Instant result — no waiting, no FDC fees!
 
-1. **Record**: The app reads the current price from a Uniswap V3 pool
+### External Pools (FDC Cross-chain)
+```
+External V3 Pool → Records Price → FDC Verifies It → Your Feed Stores It
+       📊               📝              ✅                💾
+```
+1. **Record**: The app records the price from a non-Flare pool (Ethereum, Arbitrum, etc.)
 2. **Attest**: Flare's FDC system cryptographically proves the price is real
-3. **Store**: The verified price is saved to your custom feed contract
+3. **Store**: The verified price is saved to your custom feed contract on Flare
 4. **Use**: Anyone can read your feed — it's public and trustless!
 
 ---
@@ -213,18 +239,26 @@ console.log('Price:', Number(price) / 1_000_000);
 
 ## Costs
 
-Each price update costs approximately **1.01 FLR**:
+### Flare-Native Pools (Direct State)
+| What | Cost |
+|------|------|
+| RPC call to read `slot0()` | **FREE** |
+| No FDC needed | — |
+| **Total per read** | **~0 FLR** |
 
+### FDC External Pools (Cross-chain)
 | What | Cost |
 |------|------|
 | Recording the price | ~0.002 FLR (gas) |
 | FDC attestation fee | ~1.0 FLR (fixed) |
 | Storing the proof | ~0.004 FLR (gas) |
-| **Total** | **~1.01 FLR** |
+| **Total per update** | **~1.01 FLR** |
 
-**Monthly estimates** (if updating every 5 minutes):
+**Monthly estimates** (FDC feeds updating every 5 minutes):
 - 1 feed: ~8,700 FLR/month
 - 5 feeds: ~43,500 FLR/month
+
+**Note**: Flare-native feeds are essentially free to read — only gas for view calls.
 
 ---
 
@@ -264,28 +298,30 @@ The bot will automatically update your feeds every few minutes.
 
 ---
 
-## Cross-Chain Feeds (Ethereum → Flare)
+## Cross-Chain Feeds (FDC External)
 
-You can create price feeds from **Ethereum** Uniswap V3 pools that live on **Flare**!
+You can create price feeds from **external chains** (Ethereum, Arbitrum, Base, etc.) that live on **Flare**!
 
 ### How It Works
 
-1. **Select Ethereum** as the source chain when deploying
-2. **Paste an Ethereum pool address** (e.g., WETH/USDC on Uniswap)
+1. **Select the source chain** when deploying (e.g., Ethereum, Arbitrum)
+2. **Paste the pool address** (e.g., WETH/USDC on Uniswap)
 3. The app deploys a `CrossChainPoolPriceCustomFeed` on Flare
 4. When updating:
-   - You switch to Ethereum to record the price
-   - Switch back to Flare to request FDC attestation
-   - FDC verifies the Ethereum transaction
+   - Price is recorded on the source chain (or relayed for L2s)
+   - FDC attestation verifies the cross-chain data
    - Proof is submitted to your Flare feed
 
 ### Supported Source Chains
 
-| Chain | Status |
-|-------|--------|
-| Flare | ✅ Active |
-| Ethereum | ✅ Active |
-| Arbitrum, Base, OP | ⏳ Coming (Phase 2) |
+| Chain | Method | Status |
+|-------|--------|--------|
+| Flare | Direct state (`slot0()`) | ✅ Active |
+| Coston2 | Direct state (`slot0()`) | ✅ Active |
+| Ethereum | FDC Attestation | ✅ Active |
+| Sepolia | FDC Attestation | ✅ Active |
+| Arbitrum | FDC via Relay | ✅ Active |
+| Base, OP, Polygon | FDC via Relay | ✅ Active |
 
 ---
 

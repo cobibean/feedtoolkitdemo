@@ -24,11 +24,14 @@ import {
   Play,
   X,
   Loader2,
-  ArrowRight
+  ArrowRight,
+  Zap
 } from 'lucide-react';
 import { toast } from 'sonner';
 import Link from 'next/link';
-import type { StoredFeed, SourceChain } from '@/lib/types';
+import type { StoredFeed, SourceChain, SourceKind, PriceMethod } from '@/lib/types';
+import { getSourceKind } from '@/lib/types';
+import { ProvenanceBadge } from '@/components/ui/provenance-badge';
 
 type FeedFreshness = 'fresh' | 'aging' | 'old' | 'never';
 
@@ -73,7 +76,10 @@ const STEP_PROGRESS: Record<UpdateStep, number> = {
   // Relay-specific steps
   'fetching-price': 10,
   'relaying-price': 20,
-  // Common steps
+  // Flare-native steps (no FDC)
+  'reading-native-state': 50,
+  'native-success': 100,
+  // FDC steps
   'requesting-attestation': 30,
   'waiting-finalization': 50,
   'retrieving-proof': 80,
@@ -126,6 +132,10 @@ function FeedCard({ feed, chainId, onUpdateClick, isUpdating, normalizedFeed, re
   const sourceChain = normalizedFeed.sourceChain;
   const isFlareSource = sourceChain.id === 14 || sourceChain.id === 114;
   const isRelayFeed = sourceChain.category === 'relay';
+  
+  // Derive sourceKind and method for badges
+  const feedSourceKind: SourceKind = feed.sourceKind || getSourceKind(sourceChain.id);
+  const feedMethod: PriceMethod = feed.method || (feedSourceKind === 'FLARE_NATIVE' ? 'SLOT0_SPOT' : 'FDC_ATTESTATION');
 
   const statusConfig = {
     fresh: { color: 'bg-green-500', text: 'Fresh', icon: CheckCircle2 },
@@ -159,7 +169,13 @@ function FeedCard({ feed, chainId, onUpdateClick, isUpdating, normalizedFeed, re
               <Badge variant="outline" className="font-mono text-xs">
                 {feed.token0.symbol}/{feed.token1.symbol}
               </Badge>
-              {/* Source chain indicator */}
+              {/* Provenance Badge - key for reviewer clarity */}
+              <ProvenanceBadge 
+                sourceKind={feedSourceKind}
+                method={feedMethod}
+                originChain={sourceChain.name}
+              />
+              {/* Source chain indicator for external feeds */}
               {!isFlareSource && (
                 <div className="flex items-center gap-1 text-xs text-muted-foreground">
                   <ChainBadge chainId={sourceChain.id} className="text-[10px] px-1.5" />
@@ -217,16 +233,25 @@ function FeedCard({ feed, chainId, onUpdateClick, isUpdating, normalizedFeed, re
           {isUpdating ? (
             <>
               <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-              Updating...
+              {feedSourceKind === 'FLARE_NATIVE' ? 'Reading...' : 'Updating...'}
             </>
           ) : (
             <>
               <Play className="w-4 h-4 mr-2" />
-              Update Feed
-              {!isFlareSource && (
-                <span className="ml-1 text-xs opacity-75">
-                  ({sourceChain.name} → Flare)
-                </span>
+              {feedSourceKind === 'FLARE_NATIVE' ? (
+                <>
+                  Read Price
+                  <span className="ml-1 text-xs opacity-75">(Direct)</span>
+                </>
+              ) : (
+                <>
+                  Update Feed
+                  {!isFlareSource && (
+                    <span className="ml-1 text-xs opacity-75">
+                      ({sourceChain.name} → Flare)
+                    </span>
+                  )}
+                </>
               )}
             </>
           )}
@@ -360,6 +385,22 @@ function UpdateProgressModal({
     relayTxHash?: string;
     attestationTxHash?: string;
     updateTxHash?: string;
+    nativeResult?: {
+      value: bigint;
+      decimals: number;
+      timestamp: number;
+      blockNumber: bigint;
+      sqrtPriceX96: bigint;
+      tick: number;
+    };
+    provenance?: {
+      sourceKind: string;
+      method: string;
+      originChain: string;
+      originChainId: number;
+      timestamp: number;
+      blockNumber?: number;
+    };
   };
   onCancel: () => void;
   onRetryAttestation?: () => void;
@@ -370,7 +411,8 @@ function UpdateProgressModal({
 
   const progressValue = STEP_PROGRESS[progress.step];
   const isError = progress.step === 'error';
-  const isSuccess = progress.step === 'success';
+  const isSuccess = progress.step === 'success' || progress.step === 'native-success';
+  const isNativeSuccess = progress.step === 'native-success';
   const canRetryAttestation =
     isError &&
     !!progress.txHash &&
@@ -449,7 +491,51 @@ function UpdateProgressModal({
             </div>
           )}
 
-          {isSuccess && feedAddress && (
+          {/* Native Success - show price details */}
+          {isNativeSuccess && progress.nativeResult && (
+            <div className="border-t pt-4 mt-4 space-y-4">
+              <div className="space-y-3">
+                <div className="flex items-center gap-2">
+                  <Zap className="w-4 h-4 text-emerald-500" />
+                  <p className="text-sm font-medium">Direct State Read Complete</p>
+                </div>
+                <div className="p-3 rounded-lg bg-emerald-50 dark:bg-emerald-900/20 text-xs space-y-2">
+                  <div className="flex justify-between">
+                    <span className="text-muted-foreground">Price:</span>
+                    <span className="font-mono font-semibold">
+                      {formatPrice(progress.nativeResult.value)}
+                    </span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-muted-foreground">Block:</span>
+                    <span className="font-mono">{progress.nativeResult.blockNumber.toString()}</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-muted-foreground">Timestamp:</span>
+                    <span className="font-mono">
+                      {new Date(progress.nativeResult.timestamp * 1000).toLocaleString()}
+                    </span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-muted-foreground">sqrtPriceX96:</span>
+                    <span className="font-mono text-[10px] break-all">
+                      {progress.nativeResult.sqrtPriceX96.toString().slice(0, 20)}...
+                    </span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-muted-foreground">Tick:</span>
+                    <span className="font-mono">{progress.nativeResult.tick}</span>
+                  </div>
+                </div>
+                <p className="text-[10px] text-muted-foreground italic">
+                  ⚡ No FDC attestation used — price read directly from Flare pool via slot0()
+                </p>
+              </div>
+            </div>
+          )}
+
+          {/* FDC Success - show verification evidence */}
+          {isSuccess && !isNativeSuccess && feedAddress && (
             <div className="border-t pt-4 mt-4">
               <div className="space-y-3 mb-4">
                 <p className="text-sm font-medium">Verification evidence</p>
@@ -574,7 +660,11 @@ export default function MonitorPage() {
         normalized.sourcePoolAddress,
         feed.customFeedAddress,
         sourceChainId,
-        feed.priceRelayAddress  // Pass relay address for relay feeds
+        feed.priceRelayAddress,  // Pass relay address for relay feeds
+        undefined, // existingRecordTxHash
+        feed.token0.decimals,
+        feed.token1.decimals,
+        feed.invertPrice
       );
       // Always refetch on-chain state after the update flow completes.
       // (updateFeed updates contracts, not feeds.json)

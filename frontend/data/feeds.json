@@ -1,9 +1,11 @@
 {
-  "version": "2.0.0",
+  "version": "2.1.0",
   "feeds": [
     {
       "id": "e5d7c585-d75e-441d-bb18-906e483e57dc",
       "alias": "WETH_FLRETH",
+      "sourceKind": "FLARE_NATIVE",
+      "method": "SLOT0_SPOT",
       "network": "flare",
       "poolAddress": "0xa8697b82a5e9f108296c6299859e82472340aea7",
       "customFeedAddress": "0x962e1f653f41bf6ede9cb9e704dc0c0075b64a19",
@@ -25,6 +27,8 @@
     {
       "id": "1b3a6be2-33a3-4313-9d0d-c5cb1f104440",
       "alias": "SFLR_FXRP",
+      "sourceKind": "FLARE_NATIVE",
+      "method": "SLOT0_SPOT",
       "network": "flare",
       "poolAddress": "0x9c0d44d2f6e60a4995153c2d848c113a3bde56e7",
       "customFeedAddress": "0x9420d16f223e33c8ce14e1878dde744e9eee7c48",
@@ -46,6 +50,8 @@
     {
       "id": "sepolia-weth-usdc-feed",
       "alias": "WETH_USDC_SEP",
+      "sourceKind": "FDC_EXTERNAL",
+      "method": "FDC_ATTESTATION",
       "sourceChain": {
         "id": 11155111,
         "name": "Sepolia",
@@ -73,6 +79,8 @@
     {
       "id": "eth-mainnet-weth-usdc",
       "alias": "ETH_USDC_UNISWAP",
+      "sourceKind": "FDC_EXTERNAL",
+      "method": "FDC_ATTESTATION",
       "sourceChain": {
         "id": 1,
         "name": "Ethereum",
@@ -100,6 +108,8 @@
     {
       "id": "dbc264c3-5e40-4250-b40b-a1549a98e380",
       "alias": "WETH_USDC",
+      "sourceKind": "FDC_EXTERNAL",
+      "method": "FDC_ATTESTATION",
       "sourceChain": {
         "id": 42161,
         "name": "Arbitrum",

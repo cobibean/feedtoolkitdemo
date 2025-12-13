@@ -7,6 +7,8 @@ import { decodeAbiParameters, parseAbiParameters, createPublicClient, http } fro
 import { getChainById as getSourceChainById, isRelayChain, type SupportedChain } from '@/lib/chains';
 import { flare, ethereum, sepolia } from '@/lib/wagmi-config';
 import { PRICE_RELAY_ABI } from '@/lib/artifacts/PriceRelay';
+import { readFlareNativePrice } from '@/lib/priceSources/flareNative';
+import { getSourceKind, type PriceProvenance, type DirectStateResult } from '@/lib/types';
 
 // FDC Contract Addresses (on Flare)
 const FDC_CONFIG = {
@@ -219,7 +221,10 @@ export type UpdateStep =
   // Relay-specific steps
   | 'fetching-price'
   | 'relaying-price'
-  // Common steps
+  // Flare-native steps (no FDC)
+  | 'reading-native-state'
+  | 'native-success'
+  // FDC steps
   | 'requesting-attestation'
   | 'waiting-finalization'
   | 'retrieving-proof'
@@ -237,6 +242,10 @@ interface UpdateProgress {
   attestationTxHash?: string;
   updateTxHash?: string;
   error?: string;
+  // Provenance data (for reviewer clarity)
+  provenance?: PriceProvenance;
+  // Native state result (for FLARE_NATIVE path)
+  nativeResult?: DirectStateResult;
 }
 
 interface UseFeedUpdaterResult {
@@ -246,8 +255,19 @@ interface UseFeedUpdaterResult {
     feedAddress: `0x${string}`,
     sourceChainId?: number,  // Source chain ID
     priceRelayAddress?: `0x${string}`,  // For relay chains
-    existingRecordTxHash?: `0x${string}` // Optional: retry attestation without re-recording
+    existingRecordTxHash?: `0x${string}`, // Optional: retry attestation without re-recording
+    // Token info for native price computation
+    token0Decimals?: number,
+    token1Decimals?: number,
+    invertPrice?: boolean
   ) => Promise<void>;
+  // Native-only update (skips FDC entirely)
+  updateNativeFeed: (
+    poolAddress: `0x${string}`,
+    token0Decimals: number,
+    token1Decimals: number,
+    invertPrice: boolean
+  ) => Promise<DirectStateResult | null>;
   progress: UpdateProgress;
   isUpdating: boolean;
   cancel: () => void;
@@ -281,19 +301,108 @@ export function useFeedUpdater(): UseFeedUpdaterResult {
     setCancelled(true);
   }, []);
 
+  /**
+   * FLARE_NATIVE PATH: Read price directly from on-chain state
+   * 
+   * This is the clean path for Flare-native pools:
+   * - Uses slot0().sqrtPriceX96 directly
+   * - NO FDC attestation involved
+   * - NO PriceRecorder events
+   * - Returns instantly (single RPC call)
+   */
+  const updateNativeFeed = useCallback(async (
+    poolAddress: `0x${string}`,
+    token0Decimals: number,
+    token1Decimals: number,
+    invertPrice: boolean
+  ): Promise<DirectStateResult | null> => {
+    setIsUpdating(true);
+    setCancelled(false);
+    const startTime = Date.now();
+
+    const updateProgress = (step: UpdateStep, message: string, extra?: Partial<UpdateProgress>) => {
+      setProgress({
+        step,
+        message,
+        elapsed: Math.floor((Date.now() - startTime) / 1000),
+        ...extra,
+      });
+    };
+
+    try {
+      updateProgress('reading-native-state', 'Reading price from Flare pool (direct state read)...');
+
+      // Direct on-chain state read - no FDC involved
+      const result = await readFlareNativePrice(
+        poolAddress,
+        token0Decimals,
+        token1Decimals,
+        invertPrice
+      );
+
+      console.log('[FeedUpdater] FLARE_NATIVE direct state result:', {
+        value: result.value.toString(),
+        decimals: result.decimals,
+        timestamp: result.timestamp,
+        blockNumber: result.blockNumber.toString(),
+        sqrtPriceX96: result.sqrtPriceX96.toString(),
+        tick: result.tick,
+      });
+
+      updateProgress('native-success', 'Price read successfully from on-chain state!', {
+        nativeResult: result,
+        provenance: result.provenance,
+      });
+
+      return result;
+
+    } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+      setProgress({
+        step: 'error',
+        message: `Failed to read native price: ${errorMessage}`,
+        elapsed: Math.floor((Date.now() - startTime) / 1000),
+        error: errorMessage,
+      });
+      return null;
+    } finally {
+      setIsUpdating(false);
+    }
+  }, []);
+
   const updateFeed = useCallback(async (
     priceRecorderAddress: `0x${string}` | undefined,
     poolAddress: `0x${string}`,
     feedAddress: `0x${string}`,
     sourceChainId: number = 14,  // Default to Flare if not specified
     priceRelayAddress?: `0x${string}`,  // For relay chains
-    existingRecordTxHash?: `0x${string}` // Optional: skip recordPrice and just attest this tx
+    existingRecordTxHash?: `0x${string}`, // Optional: skip recordPrice and just attest this tx
+    // Token info for native price computation
+    token0Decimals: number = 18,
+    token1Decimals: number = 18,
+    invertPrice: boolean = false
   ) => {
     console.log('[FeedUpdater] ===== UPDATE FEED CALLED =====');
     console.log('[FeedUpdater] priceRecorderAddress:', priceRecorderAddress);
     console.log('[FeedUpdater] poolAddress:', poolAddress);
     console.log('[FeedUpdater] feedAddress:', feedAddress);
     console.log('[FeedUpdater] sourceChainId param:', sourceChainId);
+    
+    // ============================================================
+    // ROUTING DECISION: FLARE_NATIVE vs FDC_EXTERNAL
+    // ============================================================
+    const sourceKind = getSourceKind(sourceChainId);
+    console.log('[FeedUpdater] sourceKind:', sourceKind);
+
+    // FLARE_NATIVE PATH: Direct on-chain state read (no FDC)
+    if (sourceKind === 'FLARE_NATIVE') {
+      console.log('[FeedUpdater] Using FLARE_NATIVE path - direct state read, no FDC');
+      await updateNativeFeed(poolAddress, token0Decimals, token1Decimals, invertPrice);
+      return;
+    }
+
+    // FDC_EXTERNAL PATH: Continue with existing FDC attestation flow
+    console.log('[FeedUpdater] Using FDC_EXTERNAL path - FDC attestation required');
     
     if (!publicClient || !walletClient) {
       throw new Error('Wallet not connected');
@@ -1023,10 +1132,11 @@ export function useFeedUpdater(): UseFeedUpdaterResult {
     } finally {
       setIsUpdating(false);
     }
-  }, [publicClient, walletClient, chainId, cancelled, switchChainAsync]);
+  }, [publicClient, walletClient, chainId, cancelled, switchChainAsync, updateNativeFeed]);
 
   return {
     updateFeed,
+    updateNativeFeed,
     progress,
     isUpdating,
     cancel,
