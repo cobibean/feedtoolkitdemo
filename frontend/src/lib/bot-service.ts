@@ -388,15 +388,14 @@ export class BotService {
       
       this.log('info', `📊 API returned ${allFeeds.length} feed(s), ${this.relays.length} relay(s)`);
 
-        const selected = this.config.selectedFeedIds;
-        if (Array.isArray(selected) && selected.length > 0) {
-          // Preserve the order of selectedFeedIds (user's selection order for round-robin)
-          this.feeds = selected
-            .map(id => allFeeds.find(f => f.id === id))
-            .filter((f): f is StoredFeed => f !== undefined);
-        } else {
-          this.feeds = allFeeds;
-        }
+      const selected = this.config.selectedFeedIds;
+      if (Array.isArray(selected) && selected.length > 0) {
+        // Preserve the order of selectedFeedIds (user's selection order for round-robin)
+        this.feeds = selected
+          .map(id => allFeeds.find(f => f.id === id))
+          .filter((f): f is StoredFeed => f !== undefined);
+      } else {
+        this.feeds = allFeeds;
       }
     } catch (error) {
       // Feeds loading failed, keep existing
